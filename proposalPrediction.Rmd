@@ -1,0 +1,136 @@
+---
+title: "Understanding proposal win rates"
+author: "Martijn Schroder"
+date: "1/06/2019"
+output:
+  html_notebook:
+    fig_caption: yes
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+```{r loading libraries and data, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(caret)
+
+proposals <- read_csv("data/data.csv")
+
+```
+
+
+# Executive summary
+In management consulting competitiveness is high. Our firm competes actively with the 'Big 4' consultancies. Better understanding of the reasons why we win and lose proposal will give us an advantage.
+
+Our business makes decisions on our proposal management practice with the view to increase win rates. Until recently those decisions were made based on experience and perception of what works and what doesn't.
+
+In this assignment my aim is to apply manchine learning approaches to gain insights into what the data tells us about the relevant features that are good predictors of win and lose rates.
+
+Given the low number of transactions and limited cleanliness of the data, the analysis of features that should underpin decisions around proposals is relatively ambiguous. This is the main challenge to work with.
+
+# Cleaning data
+The data set is a raw export from the system we use to manage opportunities. A csv export was obtained with the following structure:
+
+```{r structure raw dataset, echo=TRUE}
+names(proposals) # obtain the column names
+tibble(proposals) # show structure of data
+```
+
+The data needs cleaning up. The following changes are made:
+
+* Rename the columns with names more suitable for analysis
+* Factorise features to enable certain type analyses
+* Convert dates and proposal amounts from strings to dates and integers
+* To facilitate Principle Component Analysis (PCA) columns reflecting people directing and managing the opportunities will be converted using one hot encoding. This will be done after data exploration and at the appropriate stage of analysis
+
+
+```{r cleaning data}
+# Rename columns to increase readibility and facilitate analysis
+proposals <- proposals %>%
+  rename(
+    name = `Opportunity Name`,
+    account = `Account Name`,
+    stage = Stage,
+    currency = `Amount Currency`,
+    amount = Amount,
+    practice = `Primary Practice`,
+    offer = `Business Offer`,
+    sector = Sector,
+    director = `Proposal director`,
+    manager = `Proposal manager`,
+    source = Source,
+    competitiveness = `Competitive or sole sourced (compulsory)`,
+    amount = Amount,
+    segment = Segment,
+    creationDate = `Created Date`,
+    closeDate = `Close Date`
+  )
+
+# Factorise culumns to facilitate certain type analyses (with exception of regression)
+proposals$account <- factor(proposals$account)
+proposals$stage <- factor(proposals$stage)
+proposals$currency <- factor(proposals$currency)
+proposals$practice <- factor(proposals$practice)
+proposals$offer <- factor(proposals$offer)
+proposals$sector <- factor(proposals$sector)
+proposals$director <- factor(proposals$director)
+proposals$manager <- factor(proposals$manager)
+proposals$source <- factor(proposals$source)
+proposals$competitiveness <- factor(proposals$competitiveness)
+proposals$segment <- factor(proposals$segment)
+
+# Convert amount column from char to integer
+proposals$amount <- as.integer(proposals$amount)
+
+# Convert date columns from char to date types
+proposals$creationDate <- as.Date(proposals$creationDate, "%d/%m/%Y")
+proposals$closeDate <- as.Date(proposals$closeDate, "%d/%m/%Y")
+```
+
+
+# Exploration
+## Data integrity
+The following table shows NA values in the dataset. It is clear that some work is to be done to prepare the dataset for analysis.
+
+```{r NA values in dataset}
+# Show a table summary of the NA values in the dataset
+colSums(is.na(proposals))
+```
+
+The following approaches to addressing the NA values are proposed.
+
+* Drop the column "Competitive or sole sourced (compulsory)". Although it would be interesting to see the impact of competitiveness on proposals, too many data points are missing to make it useful
+
+* Amount: investigate if mmissing amounts can be replaced with amount group means for "account", "primary practice" and "business offer"
+
+* Proposal director / manager: create "unknown" category for relevant observations. Doing this will retain observations for analysis and will not interfere with PCA
+
+* Outline other wrangling to be conducted
+
+```{r wrangle the data}
+# Drop "Competitive or sole sourced (compulsory)" column
+proposals <- select(proposals,-competitiveness)
+```
+
+## Data exploration
+First some basic exploration of the data to get an understanding of what it tells us.
+
+```{r number of proposals across regions, accounts, win/loss rates and amounts}
+# Basic statistics for win/loss rates over time for Australia
+proposals %>%
+  filter(currency == "AUD") %>%
+  summarise(n = count(stage))
+
+proposals %>%
+  filter(currency == "AUD") %>%
+  group_by(account) %>%
+  ggplot(aes(x = creationDate, y = amount, colour = stage)) +
+  geom_line()
+```
+
+
+# Method
+
+# Analysis
+
+# Conclusions
