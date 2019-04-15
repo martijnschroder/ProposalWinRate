@@ -57,7 +57,7 @@ proposals <- select(proposals,-competitiveness)
 
 # Data exploration
 
-# Number of opportunities and value over stage
+# Get total number of valid observations for currency, stage and amount
 nrProposals <- proposals %>%
   select(currency, stage, amount) %>%
   na.omit() %>%
@@ -65,6 +65,7 @@ nrProposals <- proposals %>%
   summarise(count = n()) %>%
   pull(count)  
 
+# Number of opportunities and value over stage
 proposals %>%
   select(currency, stage, amount) %>%
   na.omit() %>%
