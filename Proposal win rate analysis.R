@@ -34,21 +34,8 @@ proposals <- proposals %>%
 names(proposals) # much better
 
 
-# Factorise culumns to facilitate certain type analyses (with exception of regression)
-proposals$account <- factor(proposals$account)
-proposals$stage <- factor(proposals$stage)
-proposals$currency <- factor(proposals$currency)
-proposals$practice <- factor(proposals$practice)
-proposals$offer <- factor(proposals$offer)
-proposals$sector <- factor(proposals$sector)
-proposals$director <- factor(proposals$director)
-proposals$manager <- factor(proposals$manager)
-proposals$source <- factor(proposals$source)
-proposals$competitiveness <- factor(proposals$competitiveness)
-proposals$segment <- factor(proposals$segment)
-
 # Convert amount column from char to integer
-proposals$amount <- as.integer(proposals$amount)
+proposals$amount <- as.numeric(proposals$amount)
 
 # Convert date columns from char to date types
 proposals$creationDate <- as.Date(proposals$creationDate, "%d/%m/%Y")
@@ -101,12 +88,11 @@ grid.arrange(p1, p2, ncol = 2)
 # Winning proposals over time and coloured by practice
 # As can be seen from the graph, there are some big outliers that may distort later model fitting
 proposals %>% filter(currency == "AUD", stage == "Opp successful") %>%
-  na.omit() %>%
   ggplot(aes(creationDate, amount, colour = practice, alpha(0.4))) +
   geom_point()
 
 # Check how NA values are potentially impacting the data
-nrow(proposals)
+nrow(proposals) # Number of observations prior to cleaning
 # we have 3562 observations in the dataset. See how many we end up with once we're done cleaning
 
 # account
@@ -128,13 +114,21 @@ nrow(proposals[is.na(proposals$amount),])
 # 82 observations are returned. If other columsn don't feature too many NA values, we can substitute NAs
 # with group means for account/stage/practice/offer/sector if possible
 # TODO: fix amounts with group means through some method
+# the following is a tempory fix - set the amount to the overall mean for amount
+
+amount <- as.double(proposals$amount[!is.na(proposals$amount)])
+avg_amount <- mean(amounts[amounts >= 1000])
+proposals$amount[is.na(proposals$amount)] <- avg_amount
+proposals$amount[proposals$amount < 1000] <- avg_amount
+
 
 # practice
 proposals[is.na(proposals$practice),]
 nrow(proposals[is.na(proposals$practice),])
 # 118 NA values for practice. Offer is mostly known and tied to practice. We can retrieve practice values.
 # TODO: retrieve practice values based on offer
-
+# the following is a temp solution and not desirable
+proposals$practice[is.na(proposals$practice)] <- "Unknown"
 
 # offer
 proposals[is.na(proposals$offer),]
@@ -153,38 +147,51 @@ nrow(proposals[is.na(proposals$sector),]) / nrow(proposals)
 # 2. Find list of those same clients with sectors populated
 # 3. Match the lists and see how well we do
 # TODO: fix
+# the following is a temp fix
 
+proposals$sector[is.na(proposals$sector)] <- "Unknown"
 
 # segment
 nrow(proposals[is.na(proposals$segment),])
 # 604 observations have missing segment. Either follow procedure above or forget as it seems that 
 # sector may not be too important
 # TODO: fix
-
+# the following is a temp fix
+proposals$segment[is.na(proposals$segment)] <- "Unknown"
 
 # director
 proposals[is.na(proposals$director),]
 # 12 observations have NA for director. We can substitute with "unknown" so we don't lose data
-proposals[is.na(proposals$director),]$director <- "Unknown"
+proposals$director[is.na(proposals$director)] <- "Unknown"
 
 # manager
 proposals[is.na(proposals$manager),]
 # 14 observations have NA for manager We can substitute with "unknown" so we don't lose data
+proposals$manager[is.na(proposals$manager)] <- "Unknown"
 
 
+# Factorise culumns to facilitate certain type analyses (with exception of regression)
+proposals$account <- factor(proposals$account)
+proposals$stage <- factor(proposals$stage)
+proposals$currency <- factor(proposals$currency)
+proposals$practice <- factor(proposals$practice)
+proposals$offer <- factor(proposals$offer)
+proposals$sector <- factor(proposals$sector)
+proposals$director <- factor(proposals$director)
+proposals$manager <- factor(proposals$manager)
+proposals$source <- factor(proposals$source)
+proposals$segment <- factor(proposals$segment)
 
 # Early test with random forests - the data has not been cleaned enough yet
 proposals_clean <- proposals %>%
-  na.omit()  %>%
+#  na.omit()  %>%
   filter(!(stage == "Client not pursuing" | stage == "Nous not pursuing"))
+
+nrow(proposals_clean) # 3008 observations remaining
 
 # convert practice to an integer
 # TODO: find a smarter method
 proposals_clean %>% distinct(practice)
-proposals_clean$practice[proposals_clean$practice == "Public policy"] <- 1
-proposals_clean$practice[proposals_clean$practice == "Business & Digital Strategy"] <- 2
-proposals_clean$practice[proposals_clean$practice == "Org Performance and Leadership"] <- 3
-proposals_clean$practice[proposals_clean$practice == "Executive and talent development"] <- 4
 
 proposals_clean$practice <- as.factor(proposals_clean$practice)
 proposals_clean$stage <- as.factor(proposals_clean$stage)
@@ -206,13 +213,18 @@ levels(proposals_clean$director) <- 1:length(levels(proposals_clean$director))
 levels(proposals_clean$manager) <- 1:length(levels(proposals_clean$manager))
 levels(proposals_clean$source) <- 1:length(levels(proposals_clean$source))
 
-proposals_clean <- proposals_clean %>% select(-currency, -name, -creationDate, -closeDate)
+proposals_clean <- proposals_clean %>% filter(currency == "AUD") %>% select(-currency)
+
+proposals_clean <- proposals_clean %>% select(-name, -creationDate, -closeDate)
 str(proposals_clean)
 
 # Fitting with ctree
 library(party)
-fit <- ctree(stage ~ ., data = proposals_clean)
-plot(fit)
+proposals_clean2 <- proposals_clean %>% select(-account)
+fit <- ctree(stage ~ ., data = proposals_clean2)
+plot(fit) # learning: do we need to categorise amount?
+
+
 
 # Fitting random forest
 library(randomForest)
@@ -254,3 +266,21 @@ fit <= rpart(stage ~ .,
              data = proposals_clean, 
              method = "anova", 
              control=rpart.control(minsplit=30, cp=0.001))
+
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+
+fancyRpartPlot(tree)
+
+# K nearest neighbours
+train_knn <- train(stage ~ ., method = "knn", 
+                   data = proposals_clean,
+                   tuneGrid = data.frame(k = seq(9, 71, 2)))
+
+# best tune
+train_knn$bestTune
+
+confusionMatrix(predict(train_knn, proposals_clean, type = "raw"),
+                proposals_clean$stage)$overall["Accuracy"]
+
