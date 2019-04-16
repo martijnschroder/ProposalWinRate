@@ -3,7 +3,7 @@ library(dplyr)
 library(lubridate)
 library(caret)
 library(gridExtra)
-#library(randomForest)
+library(rpart)
 
 proposals <- read_csv("data/data.csv")
 
@@ -173,9 +173,84 @@ proposals[is.na(proposals$manager),]
 
 
 
-
-
-
-
-
 # Early test with random forests - the data has not been cleaned enough yet
+proposals_clean <- proposals %>%
+  na.omit()  %>%
+  filter(!(stage == "Client not pursuing" | stage == "Nous not pursuing"))
+
+# convert practice to an integer
+# TODO: find a smarter method
+proposals_clean %>% distinct(practice)
+proposals_clean$practice[proposals_clean$practice == "Public policy"] <- 1
+proposals_clean$practice[proposals_clean$practice == "Business & Digital Strategy"] <- 2
+proposals_clean$practice[proposals_clean$practice == "Org Performance and Leadership"] <- 3
+proposals_clean$practice[proposals_clean$practice == "Executive and talent development"] <- 4
+
+proposals_clean$practice <- as.factor(proposals_clean$practice)
+proposals_clean$stage <- as.factor(proposals_clean$stage)
+proposals_clean$account <- as.factor(proposals_clean$account)
+proposals_clean$offer <- as.factor(proposals_clean$offer)
+proposals_clean$sector <- as.factor(proposals_clean$sector)
+proposals_clean$segment <- as.factor(proposals_clean$segment)
+proposals_clean$director <- as.factor(proposals_clean$director)
+proposals_clean$manager <- as.factor(proposals_clean$manager)
+proposals_clean$source <- as.factor(proposals_clean$source)
+
+
+levels(proposals_clean$practice) <- 1:length(levels(proposals_clean$practice))
+levels(proposals_clean$account) <- 1:length(levels(proposals_clean$account))
+levels(proposals_clean$offer) <- 1:length(levels(proposals_clean$offer))
+levels(proposals_clean$sector) <- 1:length(levels(proposals_clean$sector))
+levels(proposals_clean$segment) <- 1:length(levels(proposals_clean$segment))
+levels(proposals_clean$director) <- 1:length(levels(proposals_clean$director))
+levels(proposals_clean$manager) <- 1:length(levels(proposals_clean$manager))
+levels(proposals_clean$source) <- 1:length(levels(proposals_clean$source))
+
+proposals_clean <- proposals_clean %>% select(-currency, -name, -creationDate, -closeDate)
+str(proposals_clean)
+
+# Fitting with ctree
+library(party)
+fit <- ctree(stage ~ ., data = proposals_clean)
+plot(fit)
+
+# Fitting random forest
+library(randomForest)
+fit <- randomForest(stage ~ ., data = proposals_clean)
+plot(fit)
+
+proposals_clean %>%
+  mutate(y_hat = predict(fit, newdata = proposals_clean)) %>% 
+  ggplot() +
+  geom_point(aes(amount, practice, colour = y_hat))
+
+# fitting with caret rpart
+library(caret)
+fit <- train(stage ~ .,
+             method = "rpart",
+             tuneGrid = data.frame(cp = seq(0, 0.05, len = 25)),
+             data = proposals_clean)
+ggplot(fit)
+
+plot(fit$finalModel, margin = 0.1)
+text(fit$finalModel, cex = 0.75)
+
+fit$results
+fit$coefnames
+fit$bestTune
+
+proposals_clean %>% 
+  mutate(y_hat = predict(fit)) %>% 
+  ggplot() +
+  geom_point(aes(stage, amount, colour = practice)) #+
+  #geom_step(aes(stage, y_hat), col="red")
+
+# Tree with rpart
+library(rpart)
+fit <= rpart(stage ~ ., 
+             data = proposals_clean)
+
+fit <= rpart(stage ~ ., 
+             data = proposals_clean, 
+             method = "anova", 
+             control=rpart.control(minsplit=30, cp=0.001))
