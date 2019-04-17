@@ -101,3 +101,46 @@ conf <- table(test$Severity, _test)
 acc <- sum(diag(conf))/sum(conf)
 
 
+
+
+# Ranger
+train_set$name <- factor(train_set$name)
+train_set$stage <- factor(train_set$stage)
+train_set$practice <- factor(train_set$practice)
+train_set$offer <- factor(train_set$offer)
+train_set$sector <- factor(train_set$sector)
+train_set$segment <- factor(train_set$segment)
+train_set$director <- factor(train_set$director)
+train_set$manager <- factor(train_set$manager)
+
+test_set$name <- factor(test_set$name)
+test_set$stage <- factor(test_set$stage)
+test_set$practice <- factor(test_set$practice)
+test_set$offer <- factor(test_set$offer)
+test_set$sector <- factor(test_set$sector)
+test_set$segment <- factor(test_set$segment)
+test_set$director <- factor(test_set$director)
+test_set$manager <- factor(test_set$manager)
+
+
+train_set <- train_set %>%
+  select(-name, -currency, -creationDate, -closeDate, -source)
+
+test_set <- test_set %>%
+  select(-name, -currency, -creationDate, -closeDate, -source)
+
+
+# classification forest
+ranger(stage ~., data = train_set, num.trees = 70, mtry=3)
+
+# prediction
+train.idx <- sample(nrow(iris), 2/3 * nrow(iris))
+iris.train <- iris[train.idx, ]
+iris.test <- iris[-train.idx, ]
+
+rg.proposals <- ranger(stage ~ ., data = train_set)
+pred.proposals <- predict(rg.proposals, data = test_set)
+
+#Build a confusion matrix
+table(test_set$stage, pred.proposals$predictions)
+
