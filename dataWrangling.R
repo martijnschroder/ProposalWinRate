@@ -1,10 +1,4 @@
-library(tidyverse)
-library(dplyr)
-library(lubridate)
-library(caret)
-library(gridExtra)
-library(rpart)
-
+# Read the dataset
 proposals <- read_csv("data/data.csv", col_names = TRUE)
 
 names(proposals) # obtain the column names
@@ -47,49 +41,6 @@ colSums(is.na(proposals))
 # Drop "Competitive or sole sourced (compulsory)" column
 proposals <- select(proposals,-competitiveness)
 
-# Data exploration
-
-# Get total number of valid observations for currency, stage and amount
-nrProposals <- proposals %>%
-  select(currency, stage, amount) %>%
-  na.omit() %>%
-  filter(currency == "AUD") %>%
-  summarise(count = n()) %>%
-  pull(count)
-
-# Number of opportunities and value over stage
-p1 <- proposals %>%
-  select(currency, stage, amount) %>%
-  na.omit() %>%
-  filter(currency == "AUD") %>%
-  group_by(stage) %>%
-  summarise(n = n(), value = sum(amount), perc = n() / nrProposals) %>%
-  ggplot(aes(x = stage, y = n)) +
-  geom_bar(stat = "Identity")
-
-p2 <- proposals %>%
-  select(currency, stage, amount) %>%
-  na.omit() %>%
-  filter(currency == "AUD") %>%
-  group_by(stage) %>%
-  summarise(n = n(), value = sum(amount), perc = n() / nrProposals) %>%
-  ggplot(aes(x = stage, y = value)) +
-  geom_bar(stat = "Identity")
-
-grid.arrange(p1, p2, ncol = 2)
-
-# Observations: wins and losses in numbers seem at odds with wins and losses in total value
-# It looks like we win smaller bids and loose larger ones. This means that value of the proposal
-# is a significant contributer
-
-
-# Explore how many bids we won / lose per client, practice, offer, sector, amount
-
-# Winning proposals over time and coloured by practice
-# As can be seen from the graph, there are some big outliers that may distort later model fitting
-proposals %>% filter(currency == "AUD", stage == "Opp successful") %>%
-  ggplot(aes(creationDate, amount, colour = practice, alpha(0.4))) +
-  geom_point()
 
 # Check how NA values are potentially impacting the data
 nrow(proposals) # Number of observations prior to cleaning
@@ -116,11 +67,11 @@ nrow(proposals[is.na(proposals$amount),])
 # TODO: fix amounts with group means through some method
 # the following is a tempory fix - set the amount to the overall mean for amount
 
-amount <- as.double(proposals$amount[!is.na(proposals$amount)])
+amounts <- as.double(proposals$amount[!is.na(proposals$amount)])
 avg_amount <- mean(amounts[amounts >= 1000])
 proposals$amount[is.na(proposals$amount)] <- avg_amount
 proposals$amount[proposals$amount < 1000] <- avg_amount
-
+rm(amounts, avg_amount)
 
 # practice
 proposals[is.na(proposals$practice),]
@@ -169,5 +120,13 @@ proposals[is.na(proposals$manager),]
 # 14 observations have NA for manager We can substitute with "unknown" so we don't lose data
 proposals$manager[is.na(proposals$manager)] <- "Unknown"
 
+# Create train and test set with standard seed for reproducibiliy
+set.seed(1)
 
+# Get a random sample of 90% for the train set and 10% for validation
+train_index <- sample(1:nrow(proposals), round(0.9*nrow(proposals)))
+train_set <- proposals[train_index, ]
+test_set <- proposals[-train_index, ]
 
+# clean up environment
+rm(train_index)
