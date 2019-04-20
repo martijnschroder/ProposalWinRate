@@ -1,5 +1,6 @@
 # Read the dataset
-proposals <- read_csv("data/data.csv", col_names = TRUE)
+# Change to de identified dataset: "data/data.csv"
+proposals <- read_csv("data/data_real.csv", col_names = TRUE)
 
 # Rename columns to increase readibility and facilitate analysis
 proposals <- proposals %>%
