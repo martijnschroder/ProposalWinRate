@@ -3,10 +3,11 @@
 library(tidyverse)
 library(dplyr)
 library(lubridate)
-library(caret) ## loads ggplot as a dependency
+#library(caret) ## loads ggplot as a dependency
+library(ggplot2)
 library(ggthemes)
 library(gridExtra)
-library(rpart)
+#library(rpart)
 
 # load and wrangle data
 source("dataWrangling.R")

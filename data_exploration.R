@@ -8,6 +8,9 @@ nrProposals <- proposals %>%
   summarise(count = n()) %>%
   pull(count)
 
+# Average amount per sector and win rate
+
+
 # Number of opportunities and value over stage
 p1 <- proposals %>%
   select(currency, stage, amount) %>%
@@ -53,32 +56,59 @@ proposals <- proposals %>%
 practice_wins_rate <- proposals %>%
   filter(currency == "AUD") %>%
   group_by(practice, stage) %>%
-  summarise(wins = n())
+  summarise(n = n())
 
 offer_wins_rate <- proposals %>%
   filter(currency == "AUD") %>%
   group_by(offer, stage) %>%
-  summarise(wins = n())
+  summarise(n = n())
 
 sector_wins_rate <- proposals %>%
   filter(currency == "AUD") %>%
   group_by(sector, stage) %>%
-  summarise(wins = n())
+  summarise(n = n())
 
 segment_wins_rate <- proposals %>%
   filter(currency == "AUD") %>%
   group_by(segment, stage) %>%
-  summarise(wins = n())
+  summarise(n = n())
 
+# Opp directors' win rates and values
 director_wins_rate <- proposals %>%
   filter(currency == "AUD") %>%
   group_by(director, stage) %>%
-  summarise(wins = n())
+  summarise(n = n(), value = sum(amount), avg_value = value/n) %>%
+  arrange(desc(avg_value))
 
+director_wins_rate <- director_wins_rate %>%
+  group_by(director) %>%
+  mutate(ratio = n / sum(n)) %>%
+  filter(stage == "Opp successful") %>%
+  filter(!str_detect(director, "nactive")) %>%
+  filter(n > 5)
+
+director_wins_rate %>%
+  ggplot(aes(x=avg_value,y=ratio, size=n),alpha(0.4)) +
+  geom_point()
+
+
+# Opp managers' win rates and values
 manager_wins_rate <- proposals %>%
   filter(currency == "AUD") %>%
   group_by(manager, stage) %>%
-  summarise(wins = n())
+  summarise(n = n(), value = sum(amount), avg_value = value/n) %>%
+  arrange(desc(avg_value))
+
+manager_wins_rate <- manager_wins_rate %>%
+  group_by(manager) %>%
+  mutate(ratio = n / sum(n)) %>%
+  filter(stage == "Opp successful") %>%
+  filter(!str_detect(manager, "nactive")) %>%
+  filter(n > 5)
+
+manager_wins_rate %>%
+  ggplot(aes(x=avg_value,y=ratio, size=n),alpha(0.4)) +
+  geom_point()
 
 practice_wins_rate
 offer_wins_rate
@@ -94,26 +124,38 @@ practice_wins_rate %>%
   geom_bar(stat = "Identity")
 
 offer_wins_rate %>%
-  ggplot(aes(x = practice, y = wins)) +
+  ggplot(aes(x = offer, y = wins)) +
   geom_bar(stat = "Identity")
 
 sector_wins_rate %>%
-  ggplot(aes(x = practice, y = wins)) +
-  geom_bar(stat = "Identity")
+  ggplot(aes(x = sector, y = wins)) +
+  geom_bar(stat = "Identity") +
+  coord_flip()
 
 segment_wins_rate %>%
-  ggplot(aes(x = practice, y = wins)) +
+  ggplot(aes(x = segment, y = wins)) +
   geom_bar(stat = "Identity")
 
 director_wins_rate %>%
-  ggplot(aes(x = practice, y = wins)) +
-  geom_bar(stat = "Identity")
+  ggplot(aes(x = director, y = n)) +
+  geom_bar(stat = "Identity") +
+  coord_flip()
+
+director_wins_rate %>% filter(stage == "Opp successful") %>%
+  ggplot(aes(x=director, y=ratio, colour=n)) +
+  geom_point() +
+  coord_flip()
+
+manager_wins_rate %>%
+  filter(stage == "Opp successful", n >= 5) %>%
+  filter(!str_detect(manager, 'nactive')) %>%
+  arrange(desc(ratio)) %>%
+  ggplot(aes(x=manager, y=ratio, size=n)) +
+  geom_point() +
+  coord_flip()
 
 manager_wins_rate %>%
   ggplot(aes(x = practice, y = wins)) +
   geom_bar(stat = "Identity")
 
-practice_wins_rate %>%
-  ggplot(aes(x = practice, y = wins)) +
-  geom_bar(stat = "Identity")
 

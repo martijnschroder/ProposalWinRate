@@ -46,7 +46,8 @@ plot(fit) # learning: do we need to categorise amount?
 
 # Fitting random forest
 library(randomForest)
-fit <- randomForest(stage ~ ., data = proposals_clean)
+fit_with_account <- randomForest(stage ~ ., data = train_set)
+fit_no_account <- randomForest(stage ~ amount + practice + offer + sector + director + manager, data = proposals_clean)
 plot(fit)
 
 proposals_clean %>%
@@ -59,7 +60,7 @@ library(caret)
 fit <- train(stage ~ .,
              method = "rpart",
              tuneGrid = data.frame(cp = seq(0, 0.05, len = 25)),
-             data = proposals_clean)
+             data = train_set)
 ggplot(fit)
 
 plot(fit$finalModel, margin = 0.1)
@@ -134,9 +135,9 @@ test_set <- test_set %>%
 ranger(stage ~., data = train_set, num.trees = 70, mtry=3)
 
 # prediction
-train.idx <- sample(nrow(iris), 2/3 * nrow(iris))
-iris.train <- iris[train.idx, ]
-iris.test <- iris[-train.idx, ]
+train.idx <- sample(nrow(proposals_clean), 2/3 * nrow(proposals_clean))
+proposals.train <- iris[train.idx, ]
+proposals.test <- iris[-train.idx, ]
 
 rg.proposals <- ranger(stage ~ ., data = train_set)
 pred.proposals <- predict(rg.proposals, data = test_set)

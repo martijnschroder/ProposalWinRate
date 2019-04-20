@@ -1,7 +1,7 @@
 # K nearest neighbours
-
+library(caret)
 train_knn <- train(stage ~ ., method = "knn", 
-                   data = proposals_clean,
+                   data = proposals,
                    tuneGrid = data.frame(k = seq(9, 71, 2)))
 
 # best tune

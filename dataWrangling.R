@@ -1,9 +1,6 @@
 # Read the dataset
 proposals <- read_csv("data/data.csv", col_names = TRUE)
 
-names(proposals) # obtain the column names
-tibble(proposals) # show structure of data
-
 # Rename columns to increase readibility and facilitate analysis
 proposals <- proposals %>%
   rename(
@@ -25,11 +22,8 @@ proposals <- proposals %>%
     closeDate = `Close Date`
   )
 
-names(proposals) # much better
-
-
 # Convert amount column from char to integer
-proposals$amount <- as.numeric(proposals$amount)
+proposals$amount <- as.double(proposals$amount)
 
 # Convert date columns from char to date types
 proposals$creationDate <- as.Date(proposals$creationDate, "%d/%m/%Y")
@@ -39,7 +33,7 @@ proposals$closeDate <- as.Date(proposals$closeDate, "%d/%m/%Y")
 colSums(is.na(proposals))
 
 # Drop "Competitive or sole sourced (compulsory)" column
-proposals <- select(proposals,-competitiveness)
+proposals <- select(proposals,-competitiveness, -source)
 
 
 # Check how NA values are potentially impacting the data
@@ -119,6 +113,19 @@ proposals$director[is.na(proposals$director)] <- "Unknown"
 proposals[is.na(proposals$manager),]
 # 14 observations have NA for manager We can substitute with "unknown" so we don't lose data
 proposals$manager[is.na(proposals$manager)] <- "Unknown"
+
+# Code target variable "stage" as follows: 1 = "Opp successful", 0 = "Opp unsuccessful"
+proposals$stage[proposals$stage == "Opp successful"] <- 1
+proposals$stage[proposals$stage == "Opp unsuccessful"] <- 0
+
+proposals$stage <- as.integer(proposals$stage)
+
+proposals <- proposals %>% filter(stage == 0 | stage == 1) # use only win and loss data
+proposals <- proposals %>% filter(currency == "AUD") # user only Australian data
+proposals <- proposals %>% select(-currency) # drop currency column as we don't need it anymore
+proposals <- proposals %>% filter(segment != "Internal")
+
+
 
 # Create train and test set with standard seed for reproducibiliy
 set.seed(1)
