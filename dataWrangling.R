@@ -2,6 +2,9 @@
 # Change to de identified dataset: "data/data.csv"
 proposals <- read_csv("data/data_real.csv", col_names = TRUE)
 
+names(proposals) # obtain the column names
+tibble(proposals) # show structure of data
+
 # Rename columns to increase readibility and facilitate analysis
 proposals <- proposals %>%
   rename(
@@ -23,18 +26,30 @@ proposals <- proposals %>%
     closeDate = `Close Date`
   )
 
-# Convert amount column from char to integer
-proposals$amount <- as.double(proposals$amount)
 
-# Convert date columns from char to date types
-proposals$creationDate <- as.Date(proposals$creationDate, "%d/%m/%Y")
-proposals$closeDate <- as.Date(proposals$closeDate, "%d/%m/%Y")
+# Step 1: create a tibble with column names and proportions of NA values per column
+n <- nrow(proposals) # number of rows in dataset
+sumNAbefore <- tibble(colSums(is.na(proposals)/n)) # proportions of NA values per column
+sumNAbefore <- cbind(colnames(proposals), sumNAbefore) # concatenate the vectors
+names(sumNAbefore) <- c("feature", "proportion") # rename the columns to human readible
 
-# Show a table summary of the NA values in the dataset
-colSums(is.na(proposals))
+p1 <- sumNAbefore %>% ggplot(aes(reorder(feature, -proportion), proportion)) +
+  geom_bar(stat = "Identity") +
+  coord_flip() +
+  xlab("Dataset column") +
+  ylab("Proportion of NA values") +
+  ggtitle("Proportion of NA values in the dataset columns") +
+  theme_light()
 
-# Drop "Competitive or sole sourced (compulsory)" column
+
+# Step 2: transform the NA values
+# 2a. drop the competitiveness column. It's too broken to be useful
 proposals <- select(proposals,-competitiveness, -source)
+
+# 2b. split name column into name and description. We don't need to reference number
+proposals$account <-proposals$name %>% str_extract("^[A-Z]{3}") # 3 letter identifyer of opportunity
+proposals$description <-sub("^[A-Z]{3}\\s\\d{4}\\s*[-]*\\s*", "", proposals$name) # name of opportunity
+proposals <- proposals %>% select(-name) # name column now redundant. Can be dropped
 
 
 # Check how NA values are potentially impacting the data
@@ -42,7 +57,7 @@ nrow(proposals) # Number of observations prior to cleaning
 # we have 3562 observations in the dataset. See how many we end up with once we're done cleaning
 
 # account
-proposals[is.na(proposals$account),]
+proposals[is.na(proposals$account), ]
 # 7 observations are returned, with most columns populated with NA values. We need to drop those records
 proposals <- proposals %>% filter(!is.na(account)) # remove the offending observations
 
@@ -57,15 +72,15 @@ proposals[is.na(proposals$currency),]
 # amount
 proposals[is.na(proposals$amount),]
 nrow(proposals[is.na(proposals$amount),])
-# 82 observations are returned. If other columsn don't feature too many NA values, we can substitute NAs
+# 73 observations are returned. We can substitute NAs
 # with group means for account/stage/practice/offer/sector if possible
 # TODO: fix amounts with group means through some method
 # the following is a tempory fix - set the amount to the overall mean for amount
 
 amounts <- as.double(proposals$amount[!is.na(proposals$amount)])
-avg_amount <- mean(amounts[amounts >= 1000])
-proposals$amount[is.na(proposals$amount)] <- avg_amount
-proposals$amount[proposals$amount < 1000] <- avg_amount
+avg_amount <- mean(amounts[amounts >= 1000]) # ignore amounts smaller than $1000 as they won't represent real values in our type business
+proposals$amount[is.na(proposals$amount)] <- avg_amount # replace missing values with avg amount
+proposals$amount[proposals$amount < 1000] <- avg_amount # replace values that are too low to be real with avg amount
 rm(amounts, avg_amount)
 
 # practice

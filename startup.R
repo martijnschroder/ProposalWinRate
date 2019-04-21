@@ -6,7 +6,7 @@ library(lubridate)
 #library(caret) ## loads ggplot as a dependency
 library(ggplot2)
 library(ggthemes)
-library(gridExtra)
+#library(gridExtra)
 #library(rpart)
 
 # load and wrangle data
