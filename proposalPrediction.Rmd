@@ -90,7 +90,7 @@ The figure on the left hand side shows the proportion of NA values in the column
 ```{r NA values in dataset, include=FALSE}
 # Step 1: create a tibble with column names and proportions of NA values per column
 n <- nrow(proposals) # number of rows in dataset
-sumNAbefore <- tibble(colSums(is.na(proposals)/n) # proportions of NA values per column
+sumNAbefore <- tibble(colSums(is.na(proposals)/n)) # proportions of NA values per column
 sumNAbefore <- cbind(colnames(proposals), sumNAbefore) # concatenate the vectors
 names(sumNAbefore) <- c("feature", "proportion") # rename the columns to human readible
 
