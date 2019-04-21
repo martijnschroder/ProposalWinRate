@@ -6,17 +6,18 @@ output:
   html_document:
     df_print: paged
     toc: yes
+  pdf_document:
+    toc: yes
   html_notebook:
     fig_caption: yes
     toc: yes
-  pdf_document:
-    toc: yes
 ---
-```{r loading libraries and data, include=FALSE}
+```{r loading libraries and data, include=FALSE, cache=TRUE}
 library(tidyverse)
 library(dplyr)
 library(lubridate)
 library(ggthemes)
+library(tibble)
 library(caret)
 
 # Read the dataset
@@ -41,9 +42,7 @@ For obvious reasons the data is de identified.
 The data set is a raw export from the system we use to manage opportunities. A csv export was obtained with the following structure:
 
 ```{r names and structure raw dataset, echo=TRUE}
-names(proposals) # obtain the column names
-
-str(proposals) # show structure of data
+summary(proposals) # show structure of data
 ```
 
 The data needs cleaning up. The following changes are made:
@@ -52,7 +51,7 @@ The data needs cleaning up. The following changes are made:
 * Convert "amount" column from chr to double
 * Convert "creationDate" and "closeDate" to Date format
 
-```{r renaming columns of dataset, include=FALSE}
+```{r renaming columns of dataset, include=FALSE, cache=TRUE}
 # Rename columns to increase readibility and facilitate analysis
 proposals <- proposals %>%
   rename(
@@ -83,22 +82,15 @@ proposals$closeDate <- as.Date(proposals$closeDate, "%d/%m/%y")
 
 # Exploration
 ## Exploration of columns
-Some basic exploration of the columns to better understand what information is useful, given business rules. There columns are `r names(proposals)`. 
-
-```{r}
-names(proposals)
-
-
-```
-
+Some basic exploration of the columns to better understand what information is useful, given business rules. There columns are **`r names(proposals)`**.
 
 ## Data integrity
 The figure on the left hand side shows the proportion of NA values in the columns of the dataset. The following transformations have been applied to improve the dataset, resulting in the figure on the right hand side.
 
-```{r NA values in dataset}
+```{r NA values in dataset, include=FALSE}
 # Step 1: create a tibble with column names and proportions of NA values per column
 n <- nrow(proposals) # number of rows in dataset
-sumNAbefore <- tibble(colSums(is.na(proposals)/n)) # proportions of NA values per column
+sumNAbefore <- tibble(colSums(is.na(proposals)/n) # proportions of NA values per column
 sumNAbefore <- cbind(colnames(proposals), sumNAbefore) # concatenate the vectors
 names(sumNAbefore) <- c("feature", "proportion") # rename the columns to human readible
 
@@ -123,7 +115,7 @@ The following approaches to addressing the NA values are proposed.
 
 * Outline other wrangling to be conducted
 
-```{r fix NA values in columns}
+```{r fix NA values in columns, include=FALSE}
 # Step 2: transform the NA values
 # 2a. drop the competitiveness column. It's too broken to be useful
 proposals <- proposals %>% select(-competitiveness)
