@@ -1,11 +1,7 @@
 # logistic regression fit
 
-proposals <- proposals %>% select(-name, -account)
-train_set <- train_set %>% select(-name, -account)
-test_set <- test_set %>% select(-name, -account)
-
-train_set <- train_set %>% select(-creationDate, -closeDate)
-train_set <- train_set %>% select(-director, -manager)
+train_set <- train_set %>% na.omit() %>% select(-account)
+test_set <- test_set %>% na.omit() %>% select(-account)
 
 
 model <- glm(stage ~.,family=binomial(link='logit'),data=train_set)
@@ -28,7 +24,8 @@ offer_rates %>%
   geom_point() +
   coord_flip() +
   ylab(label = "Win ratios for proposals with value >= 100k") +
-  xlab("Business offer")
+  xlab("Business offer") +
+  theme_light()
 
 # Win ratios given amount
 win_ratios <- proposals %>%
@@ -46,7 +43,10 @@ proposals %>%
   xlab("Amount")
 
 # Experimentation with bins and averages to study relationship amount and win rate
-tapply(proposals$amount, cut(proposals$amount, seq(0, 1000000, by=50000)), mean)
+bins <- tibble(seq(0, 1000000 - 50000, by=50000),
+               tapply(proposals$amount, cut(proposals$amount, seq(0, 1000000, by=50000)), sum))
+
+plot(bins)
 
 proposals %>%
   filter(amount > 49999) %>%

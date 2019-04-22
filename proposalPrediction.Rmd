@@ -23,6 +23,8 @@ library(caret)
 library(knitr)
 library(kableExtra)
 ```
+
+
 ```{r load dataset, include=FALSE}
 # Read the dataset
 proposals <- read_csv("data/data.csv", col_names = TRUE)
@@ -30,9 +32,9 @@ proposals <- read_csv("data/data.csv", col_names = TRUE)
 
 
 # Executive summary
-In management consulting competitiveness is high. Our firm competes actively with the 'Big 4' consultancies. Better understanding of the reasons why we win and loose proposal will give us an advantage.
+In management consulting competitiveness is high. Our firm competes actively with the 'Big 4' consultancies. Better understanding of the reasons why we win and lose proposal will give us an advantage.
 
-Our business makes decisions on our proposal management practice with the view to increase win rates. Until recently those decisions were made based on experience and perception of what works and what doesn't.
+Our business makes decisions on our proposal management practice with the view to increase win rates. Until recently those decisions were made based on personal experiences and perception of what works and what doesn't.
 
 In this assignment my aim is to try machine learning approaches to gain insights into what the data tells us about the relevant features that are good predictors of win and lose rates.
 
@@ -40,10 +42,24 @@ Given the low number of transactions and limited cleanliness of the data, the an
 
 > For obvious reasons the data is de identified and various columns have been recoded. This part of the data wrangling has not been shown.
 
+## Goal
+The goal of this assignment is to try and predict wether proposals will be won or lost, given a set of features.
+
+## Key steps
+The following steps were taken:
+
+  1. Investigate data and cleanse where required
+  2. Prepare data and explore
+  3. Study suitability of machine learning approaches and select a method
+  4. Train chosen model and evaluate performance with training set
+  5. Interpret results and draw conclusions
+
+## Results
+
 
 
 # Cleaning data
-The data set is a raw export from the system we use to manage opportunities. A csv export was obtained, which after de identification has the following structure:
+The data set is a raw export from the system used to manage opportunities. A csv export was obtained, which after de identification has the following structure:
 
 ```{r names and structure raw dataset, echo=TRUE}
 str(proposals, give.attr = FALSE) # show structure of data
@@ -71,7 +87,7 @@ df_meaning <- c("Name of the account, i.e. the client",
                 "Three letter code significing the account"
                 )
 df <- tibble(df_col_names, df_meaning)
-names(df) <- c("Column", "Explanation")
+names(df) <- c("Column", "Description")
 
 # Print the pretty table
 df %>%
@@ -133,14 +149,20 @@ proposals <- proposals %>% select(-competitiveness)
 ```{r summary of proposals$amount}
 summary(proposals$amount)
 
-proposals %>%
+temp <- proposals
+temp$stage[temp$stage == 1] <- "win"
+temp$stage[temp$stage == 0] <- "loss"
+
+temp %>%
   ggplot(aes(practice, amount)) +
   geom_boxplot() +
   theme_light() +
   facet_wrap(~stage, ncol=2) +
-  ggtitle("Win (1) / Loss(0) boxplots over amount") +
+  ggtitle("Win / Loss boxplots over amount") +
   xlab("Practices") +
   ylab("Amount")
+
+rm(temp)
 ```
 
 
@@ -154,7 +176,7 @@ rm(amounts, avg_amount)
 
 * *Proposal director / manager*: retain the NA values as they represent uncertainty in the dataset. Replacing them with for example "Unknown", would reduce uncertainty artificially
 
-* *Sector*: there are `sum(is.na(proposals$source))` NA values. Substitute NA values with "unknown"
+* *Sector*: there are `r sum(is.na(proposals$source))` NA values. Substitute NA values with "unknown"
 ```{r change NA values for source into "unknown"}
 proposals$sector[is.na(proposals$sector)] <- "unknown"
 ```
@@ -166,7 +188,6 @@ proposals$sector[is.na(proposals$sector)] <- "unknown"
 ```{r win/loss rates given source}
 # proportion of winning proposals given source
 sum_tab <- proposals %>%
-  filter(!is.na(source)) %>%
   group_by(source, stage) %>%
   summarise(n = n(), value = sum(amount)) %>%
   ungroup() %>%
@@ -189,15 +210,21 @@ p2 <- sum_tab %>%
   ylab("Win rate")
 
 grid.arrange(p1, p2, ncol = 2)
-rm(p1, p2)
+rm(p1, p2, sum_tab)
 ```
 As can be seen, the variability of win rates given sources is based on small numbers of observations. Win rates ordered by number of observations they're based on shows the following the following:
+
 ```{r win rates ordered by number of observations}
 # table of win rates given number of observations
-sum_tab %>%
-  filter(stage == 1, n > 9) %>%
+proposals %>%
+  group_by(source, stage) %>%
+  summarise(n = n(), value = sum(amount)) %>%
+  ungroup() %>%
+  group_by(source) %>%
+  mutate(p_win = n / sum(n)) %>%
+  filter(stage == 1) %>%
   arrange(desc(n)) %>%
-  select(n, p, source, value)
+  select(n, p_win, source)
 
 ```
 Source2 has significantly more observations than any other sources (all n <= 10 not printed). Source can be used as a predictor, however for source NA values in the dataset we will need to substitute with overall win rate for NAs if possible.
@@ -206,8 +233,76 @@ Source2 has significantly more observations than any other sources (all n <= 10 
 ## Data exploration
 First some basic exploration of the data to get an understanding of what it tells us.
 
+
+
 # Method
 
+1. Get dataset ready for analysis
+2. Try various ML approaches
+3. Select potential model
+4. Conduct analysis
+
 # Analysis
+Split data in a train and test set. The train set will contain 90% of the data.
+```{r create train and test set}
+# Create train and test set with standard seed for reproducibiliy
+set.seed(1)
+
+# Get a random sample of 90% for the train set and 10% for validation
+train_index <- sample(1:nrow(proposals), round(0.9*nrow(proposals)))
+train_set <- proposals[train_index, ]
+test_set <- proposals[-train_index, ]
+
+# clean up environment
+rm(train_index) # clean up
+```
+
+
+## glm
+
+## tree
+
+
+
+## K nearest neighbours
+K nearest neightbour performs well
+```{r K nearest neighbours, cache=TRUE}
+# K nearest neighbours
+library(caret)
+
+train_set_knn <- train_set %>%
+  na.omit() %>%
+  select(-creationDate, -closeDate, -account, -amount, -director, -manager)
+
+test_set_knn <- train_set %>%
+  na.omit() %>%
+  select(-creationDate, -closeDate, -account, -amount, -director, -manager)
+
+
+train_knn <- train(stage ~ ., method = "knn", 
+                   data = train_set_knn,
+                   na.action = na.pass,
+                   tuneGrid = data.frame(k = seq(9, 71, 2)))
+
+# best tune
+train_knn$bestTune
+
+confusionMatrix(predict(train_knn, test_set_knn, type = "raw"),
+                test_set_knn$stage)$overall["Accuracy"]
+
+```
+
+Best accuracy: 0.7006897 
+
+Are some pairs of directors and managers better than others?
+```{r compare directors and managers as pairs}
+# TODO
+```
+
+
+## rmse
+
+## 
+
 
 # Conclusions

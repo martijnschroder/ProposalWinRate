@@ -29,9 +29,12 @@ plot(p2)
 grid.arrange(p1, p2, ncol = 2)
 
 # table of win rates given number of observations
-sum_tab %>%
-  filter(stage == 1, n > 9) %>%
+proposals %>%
+  group_by(source, stage) %>%
+  summarise(n = n(), value = sum(amount)) %>%
+  ungroup() %>%
+  group_by(source) %>%
+  mutate(p = n / sum(n)) %>%
+  filter(stage == 1) %>%
   arrange(desc(n)) %>%
-  select(n, p, source, value)
-
-          
+  select(n, p, source)

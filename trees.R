@@ -1,19 +1,13 @@
 # Trees require categorisation and factorisation of features
+train_set_tree <- train_set %>%
+  na.omit() %>%
+  select(-creationDate, -closeDate, -account, -amount, -director, -manager)
 
-# We won't be needing "Nous or client not proceeding" in the analysis
-proposals_clean <- proposals %>%
-  filter(!(stage == "Client not pursuing" | stage == "Nous not pursuing"))
+test_set_tree <- train_set %>%
+  na.omit() %>%
+  select(-creationDate, -closeDate, -account, -amount, -director, -manager)
 
-nrow(proposals_clean) # 3008 observations remaining
 
-# convert practice to an integer
-# TODO: find a smarter method
-proposals_clean %>% distinct(practice)
-
-proposals_clean <- proposals_clean %>% filter(currency == "AUD") %>% select(-currency)
-
-proposals_clean <- proposals_clean %>% select(-name, -creationDate, -closeDate)
-str(proposals_clean)
 
 # Fitting with ctree
 library(party)
@@ -21,12 +15,10 @@ proposals_clean2 <- proposals_clean %>% select(-account)
 fit <- ctree(stage ~ ., data = proposals_clean2)
 plot(fit) # learning: do we need to categorise amount?
 
-
-
 # Fitting random forest
 library(randomForest)
-fit_with_account <- randomForest(stage ~ ., data = train_set)
-fit_no_account <- randomForest(stage ~ amount + practice + offer + sector + director + manager, data = proposals_clean)
+fit_with_account <- randomForest(stage ~ ., data = train_set_tree)
+
 plot(fit)
 
 proposals_clean %>%
@@ -34,12 +26,19 @@ proposals_clean %>%
   ggplot() +
   geom_point(aes(amount, practice, colour = y_hat))
 
+
+
+
+
+
 # fitting with caret rpart
 library(caret)
+
 fit <- train(stage ~ .,
              method = "rpart",
              tuneGrid = data.frame(cp = seq(0, 0.05, len = 25)),
-             data = train_set)
+             # na.action = na.pass,
+             data = train_set_tree)
 ggplot(fit)
 
 plot(fit$finalModel, margin = 0.1)
@@ -49,11 +48,12 @@ fit$results
 fit$coefnames
 fit$bestTune
 
-proposals_clean %>% 
+test_set %>% 
   mutate(y_hat = predict(fit)) %>% 
   ggplot() +
   geom_point(aes(stage, amount, colour = practice)) #+
 #geom_step(aes(stage, y_hat), col="red")
+
 
 # Tree with rpart
 train_set <- train_set %>% select(-director, -manager, -account, -name, -source, -creationDate, -closeDate)
