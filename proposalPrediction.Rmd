@@ -3,26 +3,28 @@ title: "Understanding proposal win rates"
 author: "Martijn Schroder"
 date: "1/05/2019"
 output:
+  pdf_document:
+    toc: yes
   html_document:
     df_print: paged
-    toc: yes
-  pdf_document:
     toc: yes
   html_notebook:
     fig_caption: yes
     toc: yes
 ---
-```{r loading libraries and data, include=FALSE, cache=TRUE}
+```{r loading libraries and data, include=FALSE}
 library(tidyverse)
-library(dplyr)
+# library(dplyr)
 library(lubridate)
 library(ggthemes)
 library(tibble)
+library(gridExtra)
 library(caret)
+library(knitr)
+library(kableExtra)
 
 # Read the dataset
-# Change to de identified dataset: "data/data.csv"
-proposals <- read_csv("data/data_real.csv", col_names = TRUE)
+proposals <- read_csv("data/data.csv", col_names = TRUE)
 
 ```
 
@@ -36,58 +38,71 @@ In this assignment my aim is to try machine learning approaches to gain insights
 
 Given the low number of transactions and limited cleanliness of the data, the analysis of features that should underpin decisions around proposals is relatively ambiguous. This is the main challenge to work with.
 
-For obvious reasons the data is de identified.
+> For obvious reasons the data is de identified and various columns have been recoded. This part of the data wrangling has not been shown.
+
+
 
 # Cleaning data
-The data set is a raw export from the system we use to manage opportunities. A csv export was obtained with the following structure:
+The data set is a raw export from the system we use to manage opportunities. A csv export was obtained, which after de identification has the following structure:
 
 ```{r names and structure raw dataset, echo=TRUE}
-summary(proposals) # show structure of data
+str(proposals, give.attr = FALSE) # show structure of data
 ```
 
+## Description of dataset
+The meaning of the columns is as follows:
+```{r create and show table explanation of dataset, echo=FALSE}
+# Create a pretty table explaining the data in the dataset
+
+df_col_names <- names(proposals)
+df_meaning <- c("Name of the account, i.e. the client",
+                "Proposal win / loss (1 = win, 0 = loss)",
+                "Estimated value of the opportunity",
+                "Creation date of the record",
+                "Close date of the record",
+                "High level practice group for the opportunity",
+                "Business offer the opportunity falls under (e.g. analytics, consulting, project management)",
+                "Sector of business the client falls under (e.g. education, health, finance)",
+                "Segment of the sector the opportunity falls under (e.g. insurance or loans for sector finance",
+                "Proposal director; in our practice we assign a proposal director and manager to each proposal",
+                "Proposal manager",
+                "Source of the opportunity, i.e. how did we know of it (e.g. approached by client, tender",
+                "Level of competitiveness of the opportunity (i.e. are we only party bidding or are there more?)",
+                "Three letter code significing the account"
+                )
+df <- tibble(df_col_names, df_meaning)
+names(df) <- c("Column", "Explanation")
+
+# Print the pretty table
+df %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+rm(df, df_col_names, df_meaning)
+```
+
+## Fixing data formats
 The data needs cleaning up. The following changes are made:
 
-* Rename the columns with names more suitable for analysis
-* Convert "amount" column from chr to double
+* Convert "amount" column from num to double
 * Convert "creationDate" and "closeDate" to Date format
 
-```{r renaming columns of dataset, include=FALSE, cache=TRUE}
-# Rename columns to increase readibility and facilitate analysis
-proposals <- proposals %>%
-  rename(
-    name = `Opportunity Name`,
-    account = `Account Name`,
-    stage = Stage,
-    currency = `Amount Currency`,
-    amount = Amount,
-    practice = `Primary Practice`,
-    offer = `Business Offer`,
-    sector = Sector,
-    director = `Proposal director`,
-    manager = `Proposal manager`,
-    source = Source,
-    competitiveness = `Competitive or sole sourced (compulsory)`,
-    amount = Amount,
-    segment = Segment,
-    creationDate = `Created Date`,
-    closeDate = `Close Date`
-  )
-
+```{r re code data types, cache=TRUE}
+# Change data types for amount, creationDate and closeDate
 proposals$amount <- as.double(proposals$amount)
 proposals$creationDate <- as.Date(proposals$creationDate, "%d/%m/%y")
 proposals$closeDate <- as.Date(proposals$closeDate, "%d/%m/%y")
-
 ```
 
 
 # Exploration
 ## Exploration of columns
-Some basic exploration of the columns to better understand what information is useful, given business rules. There columns are **`r names(proposals)`**.
+Some basic exploration of the columns to better understand what information is useful, given business rules.
 
 ## Data integrity
-The figure on the left hand side shows the proportion of NA values in the columns of the dataset. The following transformations have been applied to improve the dataset, resulting in the figure on the right hand side.
+The figure below shows the proportion of NA values in the columns of the dataset. 
 
-```{r NA values in dataset, include=FALSE}
+```{r NA values in dataset, echo=FALSE}
 # Step 1: create a tibble with column names and proportions of NA values per column
 n <- nrow(proposals) # number of rows in dataset
 sumNAbefore <- tibble(colSums(is.na(proposals)/n)) # proportions of NA values per column
@@ -100,49 +115,92 @@ sumNAbefore %>% ggplot(aes(reorder(feature, -proportion), proportion)) +
   coord_flip() +
   xlab("Dataset column") +
   ylab("Proportion of NA values") +
-  ggtitle("Proportion of NA values in the dataset columns") +
+  ggtitle("Proportion of NA values in the dataset") +
   theme_light()
 
+rm(n, sumNAbefore)
 ```
 
-The following approaches to addressing the NA values are proposed.
+The following approaches to addressing the NA values are implemented:
 
-* Drop the column "Competitive or sole sourced (compulsory)". Although it would be interesting to see the impact of competitiveness on proposals, too many data points are missing to make it useful
-
-* Amount: investigate if missing amounts can be replaced with amount group means for "account", "primary practice" and "business offer"
-
-* Proposal director / manager: create "unknown" category for relevant observations. Doing this will retain observations for analysis and will not interfere with PCA
-
-* Outline other wrangling to be conducted
-
-```{r fix NA values in columns, include=FALSE}
-# Step 2: transform the NA values
-# 2a. drop the competitiveness column. It's too broken to be useful
+* *competitiveness*: drop the column. Although it would be interesting to see the impact of competitiveness on proposals, too many data points are missing to make it useful in the overall analysis. Business practice changes will need to ensure this data is consistently gathered going forward
+```{r drop competitiveness column}
 proposals <- proposals %>% select(-competitiveness)
+```
 
-# 2b:  drop offer NA values as they only represent 2 observations
-proposals <- proposals %>% filter(!is.na(offer)) # remove the offending observations
 
-# 2c: replace amount values with average amounts for 
-proposals[is.na(proposals$amount),]
-nrow(proposals[is.na(proposals$amount),])
-# 75 observations are returned. If other columsn don't feature too many NA values, we can substitute NAs
-# with group means for account/stage/practice/offer/sector if possible
-# TODO: fix amounts with group means through some method
-# the following is a tempory fix - set the amount to the overall mean for amount
+* *Amount*: Replace missing amounts with overall mean for amount, or if group means can be used (e.g. group means for *offer*). The distribution of amount and boxplots for win and loss data show significant outliers for amount. Potentially predictive analysis will need to take into account potential differences in win rates given amount of proposals
+```{r summary of proposals$amount}
+summary(proposals$amount)
 
+proposals %>%
+  ggplot(aes(practice, amount)) +
+  geom_boxplot() +
+  theme_light() +
+  facet_wrap(~stage, ncol=2) +
+  ggtitle("Win (1) / Loss(0) boxplots over amount") +
+  xlab("Practices") +
+  ylab("Amount")
+```
+
+
+```{r replace missing amounts with overall group means}
 amounts <- as.double(proposals$amount[!is.na(proposals$amount)])
 avg_amount <- mean(amounts[amounts > 999]) # calculate overall avg with values greater than 999
 proposals$amount[is.na(proposals$amount)] <- avg_amount # replace NAs with avg amount
 proposals$amount[proposals$amount <= 999] <- avg_amount # replace amounts < 999 with avg_amount
 rm(amounts, avg_amount)
+```
 
-# Step 3. split name column into name and description. We don't need to reference number
-proposals$account <-proposals$name %>% str_extract("^[A-Z]{3}") # 3 letter identifyer of opportunity
-proposals$description <-sub("^[A-Z]{3}\\s\\d{4}\\s*[-]*\\s*", "", proposals$name) # name of opportunity
-proposals <- proposals %>% select(-name) # name column now redundant. Can be dropped
+* *Proposal director / manager*: retain the NA values as they represent uncertainty in the dataset. Replacing them with for example "Unknown", would reduce uncertainty artificially
+
+* *Sector*: there are `sum(is.na(proposals$source))` NA values. Substitute NA values with "unknown"
+```{r change NA values for source into "unknown"}
+proposals$sector[is.na(proposals$sector)] <- "unknown"
+```
+
+* *Segment*: there are `r sum(is.na(proposals$segment))` NA values. We can potentially match offer data for observations with segment data and substitute missing values. Alternatively we leave NA values
+
+* *Source*: there are `r sum(is.na(proposals$sector))` NA values. A quick analysis shows that there is significant predictive value in source for win/loss rates. Although many values are missing, we can try and see if a relation exists between source and other features:
+   * 
+```{r win/loss rates given source}
+# proportion of winning proposals given source
+sum_tab <- proposals %>%
+  filter(!is.na(source)) %>%
+  group_by(source, stage) %>%
+  summarise(n = n(), value = sum(amount)) %>%
+  ungroup() %>%
+  group_by(source) %>%
+  mutate(p = n / sum(n))
+
+p1 <- sum_tab %>%
+  filter(stage == 1) %>%
+  ggplot(aes(reorder(source, p), p)) +
+  coord_flip() +
+  geom_bar(stat = "Identity") +
+  xlab("Source of proposal") +
+  ylab("Proportion of proposals won")
+
+p2 <- sum_tab %>%
+  filter(stage == 1) %>%
+  ggplot(aes(n, p, colour=source)) +
+  geom_point() +
+  xlab("Number of proposals") +
+  ylab("Win rate")
+
+grid.arrange(p1, p2, ncol = 2)
+rm(p1, p2)
+```
+As can be seen, the variability of win rates given sources is based on small numbers of observations. Win rates ordered by number of observations they're based on shows the following the following:
+```{r win rates ordered by number of observations}
+# table of win rates given number of observations
+sum_tab %>%
+  filter(stage == 1, n > 9) %>%
+  arrange(desc(n)) %>%
+  select(n, p, source, value)
 
 ```
+
 
 ## Data exploration
 First some basic exploration of the data to get an understanding of what it tells us.
