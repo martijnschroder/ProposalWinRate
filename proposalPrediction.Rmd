@@ -1,5 +1,5 @@
 ---
-title: "Understanding proposal win rates"
+title: "Predicting proposal win rates"
 author: "Martijn Schroder"
 date: "1/05/2019"
 output:
@@ -12,7 +12,7 @@ output:
     fig_caption: yes
     toc: yes
 ---
-```{r loading libraries and data, include=FALSE}
+```{r load requiredlibraries, include=FALSE}
 library(tidyverse)
 # library(dplyr)
 library(lubridate)
@@ -22,10 +22,10 @@ library(gridExtra)
 library(caret)
 library(knitr)
 library(kableExtra)
-
+```
+```{r load dataset, include=FALSE}
 # Read the dataset
 proposals <- read_csv("data/data.csv", col_names = TRUE)
-
 ```
 
 
@@ -200,6 +200,7 @@ sum_tab %>%
   select(n, p, source, value)
 
 ```
+Source2 has significantly more observations than any other sources (all n <= 10 not printed). Source can be used as a predictor, however for source NA values in the dataset we will need to substitute with overall win rate for NAs if possible.
 
 
 ## Data exploration
