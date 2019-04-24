@@ -1,7 +1,7 @@
 # logistic regression fit
 
-train_set_reg <- train_set %>% na.omit() %>% select(-code)
-test_set_reg <- test_set %>% na.omit() %>% select(-code)
+train_set <- train_set_orig %>% na.omit() %>% select(-code)
+test_set <- test_set_orig %>% na.omit() %>% select(-code)
 
 model <- glm(stage ~.,family=binomial(link='logit'),data=train_set)
 

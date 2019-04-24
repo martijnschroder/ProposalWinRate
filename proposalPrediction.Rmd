@@ -409,8 +409,8 @@ set.seed(1)
 
 # Get a random sample of 90% for the train set and 10% for validation
 train_index <- sample(1:nrow(proposals), round(0.9*nrow(proposals)))
-train_set <- proposals[train_index, ]
-test_set <- proposals[-train_index, ]
+train_set_orig <- proposals[train_index, ]
+test_set_orig <- proposals[-train_index, ]
 
 # clean up environment
 rm(train_index) # clean up
@@ -419,8 +419,58 @@ rm(train_index) # clean up
 ## glm
 
 
-## trees
+## trees (rpart)
 
+1. Apply WOE to data, to create continuous variables from categorical ones
+```{r rpart tree fitting}
+# WOE the data
+library(rpart)
+library(InformationValue) # used for WOE function
+
+# WOE train_set
+train_set$account <- WOE(X=train_set$account, Y=train_set$stage)
+train_set$practice <- WOE(X=train_set$practice, Y=train_set$stage)
+train_set$offer <- WOE(X=train_set$offer, Y=train_set$stage)
+train_set$sector <- WOE(X=train_set$sector, Y=train_set$stage)
+train_set$segment <- WOE(X=train_set$segment, Y=train_set$stage)
+train_set$director <- WOE(X=train_set$director, Y=train_set$stage)
+train_set$manager <- WOE(X=train_set$manager, Y=train_set$stage)
+train_set$source <- WOE(X=train_set$source, Y=train_set$stage)
+
+# WOE test_set
+test_set$account <- WOE(X=test_set$account, Y=test_set$stage)
+test_set$practice <- WOE(X=test_set$practice, Y=test_set$stage)
+test_set$offer <- WOE(X=test_set$offer, Y=test_set$stage)
+test_set$sector <- WOE(X=test_set$sector, Y=test_set$stage)
+test_set$segment <- WOE(X=test_set$segment, Y=test_set$stage)
+test_set$director <- WOE(X=test_set$director, Y=test_set$stage)
+test_set$manager <- WOE(X=test_set$manager, Y=test_set$stage)
+test_set$source <- WOE(X=test_set$source, Y=test_set$stage)
+
+# fit the model with all featuers minus the date ones
+fit <- train(stage ~ .,
+             method = "rpart",
+             tuneGrid = data.frame(cp = seq(0, 0.05, len = 25)),
+             # na.action = na.pass,
+             data = train_set_tree)
+
+library(rpart)
+# fit the model
+fit <- rpart(stage ~ .,
+             method = "class",
+             data = train_set)
+
+# 
+pred_test <- predict(fit, test_set, type = "class")
+
+# calculate accuracy
+pred <- tibble(pred_test)
+real <- tibble(test_set$stage)
+sum(pred == real) / nrow(pred)
+
+```
+Best accuracy: 0.7978723
+I bet that's better than humans
 
 ## K nearest neighbours
 K nearest neightbour performs well
@@ -452,20 +502,6 @@ confusionMatrix(predict(train_knn, test_set_knn, type = "raw"),
 
 Best accuracy: 0.7006897 
 
-Are some pairs of directors and managers better than others?
-```{r compare directors and managers as pairs}
-# TODO
-```
-
-
-## rmse
-An rmse approach has been tested under the assumption that there are effects for:
-
-* account: some clients are more inclined to award work to us than others
-* practice: some practices are more mature than others
-* director: some directors win more proposals than others
-* manager: some managers win more proposals than others
-* source: the way proposals get to us impacts win rates (e.g. level of competitiveness, relationships)
 
 ## 
 

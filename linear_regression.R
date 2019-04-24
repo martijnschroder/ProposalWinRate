@@ -9,6 +9,8 @@ RMSE <- function(true_ratings, predicted_ratings){
 # determine overall win rate
 mu = mean(train_set$stage)
 
+# randomise to 0 and 1 with p = mu
+
 # determine RMSE
 naive_rmse <- RMSE(test_set$stage, mu)
 
