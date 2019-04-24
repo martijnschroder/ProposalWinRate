@@ -3,10 +3,10 @@ title: "Predicting proposal win rates"
 author: "Martijn Schroder"
 date: "1/05/2019"
 output:
+  pdf_document:
+    toc: yes
   html_document:
     df_print: paged
-    toc: yes
-  pdf_document:
     toc: yes
   html_notebook:
     fig_caption: yes
@@ -18,7 +18,7 @@ library(lubridate)
 library(ggthemes)
 library(tibble)
 library(gridExtra)
-library(caret)
+#library(caret)
 library(knitr)
 library(kableExtra)
 ```
@@ -102,8 +102,7 @@ df_meaning <- c("Name of the account, i.e. the client",
                 "Proposal director; in our practice we assign a proposal director and manager to each proposal",
                 "Proposal manager",
                 "Source of the opportunity, i.e. how did we know of it (e.g. approached by client, tender",
-                "Level of competitiveness of the opportunity (i.e. are we only party bidding or are there more?)",
-                "Three letter code significing the account"
+                "Level of competitiveness of the opportunity (i.e. are we only party bidding or are there more?)"
                 )
 df <- tibble(df_col_names, df_meaning)
 names(df) <- c("Column", "Description")
@@ -160,7 +159,7 @@ The following approaches to addressing the NA values are implemented:
 
 * *competitiveness*: drop the column. Although it would be interesting to see the impact of competitiveness on proposals, too many data points are missing to make it useful in the overall analysis. Business practice changes will need to ensure this data is consistently gathered going forward
 ```{r drop competitiveness column}
-proposals <- proposals %>% select(-competitiveness)
+# proposals <- proposals %>% select(-competitiveness)
 ```
 
 
@@ -364,7 +363,7 @@ rm(p1, p2)
 As can be seen, the assumption that small jobs lead to bigger jobs seems implausible, at least for the 4 accounts with the most proposals won.
 
 * **How does proposal size relates to number of proposals won by account?**
-```{r proposals size over proposals won by account}
+```{r proposals size over proposals won by account, warning=FALSE}
 # find the average size of proposals won and relate this to the amount of proposals submitted
 p1 <- proposals %>%
   filter(stage == 1) %>%
@@ -423,6 +422,9 @@ rm(train_index) # clean up
 
 1. Apply WOE to data, to create continuous variables from categorical ones
 ```{r rpart tree fitting}
+train_set <- train_set_orig
+test_set <- test_set_orig
+
 # WOE the data
 library(rpart)
 library(InformationValue) # used for WOE function
@@ -447,20 +449,14 @@ test_set$director <- WOE(X=test_set$director, Y=test_set$stage)
 test_set$manager <- WOE(X=test_set$manager, Y=test_set$stage)
 test_set$source <- WOE(X=test_set$source, Y=test_set$stage)
 
-# fit the model with all featuers minus the date ones
-fit <- train(stage ~ .,
-             method = "rpart",
-             tuneGrid = data.frame(cp = seq(0, 0.05, len = 25)),
-             # na.action = na.pass,
-             data = train_set_tree)
-
 library(rpart)
-# fit the model
+
+# fit the model with all featuers minus the date ones
 fit <- rpart(stage ~ .,
              method = "class",
              data = train_set)
 
-# 
+# get predictions for test set
 pred_test <- predict(fit, test_set, type = "class")
 
 # calculate accuracy

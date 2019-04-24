@@ -76,7 +76,7 @@ fancyRpartPlot(fit)
 
 pred_test <- predict(fit, test_set, type = "class")
 
-conf <- table(test$Severity, _test)
+conf <- table(fit$Severity, _test)
 
 acc <- sum(diag(conf))/sum(conf)
 
