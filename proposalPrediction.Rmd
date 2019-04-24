@@ -3,10 +3,10 @@ title: "Predicting proposal win rates"
 author: "Martijn Schroder"
 date: "1/05/2019"
 output:
-  pdf_document:
-    toc: yes
   html_document:
     df_print: paged
+    toc: yes
+  pdf_document:
     toc: yes
   html_notebook:
     fig_caption: yes
@@ -14,7 +14,6 @@ output:
 ---
 ```{r load requiredlibraries, include=FALSE}
 library(tidyverse)
-# library(dplyr)
 library(lubridate)
 library(ggthemes)
 library(tibble)
@@ -32,7 +31,7 @@ proposals <- read_csv("data/data.csv", col_names = TRUE)
 
 
 # Executive summary
-In management consulting competitiveness is high. Our firm competes actively with the 'Big 4' consultancies. Better understanding of the reasons why we win and lose proposal will give us an advantage.
+In management consulting competitiveness is high. Our firm competes actively with the 'Big 4' consultancies. Better understanding of the reasons why we win and lose proposal will give us an advantage in the market.
 
 Our business makes decisions on our proposal management practice with the view to increase win rates. Until recently those decisions were made based on personal experiences and perception of what works and what doesn't.
 
@@ -55,8 +54,28 @@ The following steps were taken:
   5. Interpret results and draw conclusions
 
 ## Results
+The high number of categorical variables made this a challenging tasks in terms of applying machine learning approaches.
 
+Good predictions were achieved with fitting K nearest neighbours. Regression based approaches performed reasonable. All models were hard to interpret in terms of the causes of win rates.
 
+Most significant finding was that our dataset could be improved through adding featuers that are quantified. Added these features will allow for further exploration of predictors of win rates, but will require changes in our porposal management practice. Examples of new features include:
+
+* Subjective estimation of degree of confidence to win a proposal by sector experts
+* Subjective estimation of the strength of the relationship with the client
+* **more points**
+
+After gathering production data, it will then be possible to study of those features are good predictors of proposal win rates.
+
+The main reasons why we win proposals seem to include:
+
+* Amount of the proposal
+* 
+
+Features I expected to have a clear impact, but didn't included:
+
+* the directors and managers working on the proposal
+* the amount of past proposals won as a preduction of future win rates
+* **more points**
 
 # Cleaning data
 The data set is a raw export from the system used to manage opportunities. A csv export was obtained, which after de identification has the following structure:
@@ -65,7 +84,7 @@ The data set is a raw export from the system used to manage opportunities. A csv
 str(proposals, give.attr = FALSE) # show structure of data
 ```
 
-## Description of dataset
+## Description of dataset and cleaning
 The meaning of the columns is as follows:
 ```{r create and show table explanation of dataset, echo=FALSE}
 # Create a pretty table explaining the data in the dataset
@@ -174,14 +193,33 @@ proposals$amount[proposals$amount <= 999] <- avg_amount # replace amounts < 999 
 rm(amounts, avg_amount)
 ```
 
-* *Proposal director / manager*: retain the NA values as they represent uncertainty in the dataset. Replacing them with for example "Unknown", would reduce uncertainty artificially
+* *Proposal director / manager*: there are only 3 observations with NA values for proposal director and manager. For simplicity sake we'll delete those.
+```{r remove observations with NA values for director and manager}
+# observations with NA values for director or manager
+proposals[is.na(proposals$director) | is.na(proposals$manager), ]
+
+# delete the offending observations
+proposals <- proposals[!(is.na(proposals$director) | is.na(proposals$manager)), ]
+```
+
 
 * *Sector*: there are `r sum(is.na(proposals$source))` NA values. Substitute NA values with "unknown"
 ```{r change NA values for source into "unknown"}
 proposals$sector[is.na(proposals$sector)] <- "unknown"
 ```
 
-* *Segment*: there are `r sum(is.na(proposals$segment))` NA values. We can potentially match offer data for observations with segment data and substitute missing values. Alternatively we leave NA values
+* *Segment*: there are `r sum(is.na(proposals$segment))` NA values. We can potentially match offer data for observations with segment data and substitute missing values. Alternatively we leave NA values. Proposal managers have the responsibility to enter proposal data in our system. Are there any serial offenders in terms of data quality?
+
+```{r fix NA values for segment}
+proposals[is.na(proposals$segment), ] %>% select(account, practice, sector, segment, offer) %>% arrange(sector) %>% group_by(offer) %>% summarise(n = n()) %>% arrange(desc(n))
+
+# It looks like there's no serial offenders. Just limited clarity of process
+proposals[is.na(proposals$segment), ] %>% select(account, practice, sector, segment, offer, manager) %>% group_by(manager) %>% summarise(n = n()) %>% arrange(desc(n)) %>% filter(n>2) %>% ggplot(aes(reorder(manager, n), n)) + geom_bar(stat="Identity") + coord_flip()
+
+# Fix the offending entries
+proposals$segment[is.na(proposals$segment)] <- "unknown"
+```
+
 
 * *Source*: there are `r sum(is.na(proposals$sector))` NA values. A quick analysis shows that there is significant predictive value in source for win/loss rates. Although many values are missing, we can try and see if a relation exists between source and other features:
    * 
@@ -227,20 +265,141 @@ proposals %>%
   select(n, p_win, source)
 
 ```
-Source2 has significantly more observations than any other sources (all n <= 10 not printed). Source can be used as a predictor, however for source NA values in the dataset we will need to substitute with overall win rate for NAs if possible.
+Source2 has significantly more observations than any other sources (all n <= 10 not printed). Source can be used as a predictor, however for source NA values in the dataset we could substitute with overall win rate for NAs. Alternatively we create a new source, called "unknown". That is the path we'll follow.
+```{r substitute source NA values with "unknown"}
+proposals$source[is.na(proposals$source)] <- "unknown"
+```
+
+* *code*: `r sum(is.na(proposals$code))` entries are NA values. Recode those to "unknown"
+```{r remove NA values from code}
+proposals$code[is.na(proposals$code)] <- "unknown"
+```
 
 
 ## Data exploration
 First some basic exploration of the data to get an understanding of what it tells us.
 
+* **Average win rate by account**
+```{r average win rate by account}
+# average win rate by account
+proposals %>%
+  group_by(account, stage) %>%
+  summarise(n = n()) %>% # total number of wins and losses by account
+  ungroup() %>%
+  group_by(account) %>%
+  mutate(p = n / sum(n)) %>% # proportions win/loss by account
+  filter(n>9, stage == 1) %>% # remove small n and select wins only
+  arrange(desc(p)) %>%
+  ggplot(aes(reorder(account, p), p, size=n)) +
+  geom_point() + coord_flip() + theme_light() +
+  xlab("Account") +
+  ylab("Proposal win rate")
+```
+
+A number of observations:
+
+1. What are the differences between accounts with win rates between (0.6 and 0.8) and (0.8 and 1.0)?
+
+
+* **Seasonality in win rates**: we experience seasonality in the number of proposals we respond to. Let's explore number of proposals per year and win rates per year
+
+```{r explore seasonality}
+# seasonal win rates by account and over practice
+proposals %>%
+  group_by(account, stage) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  group_by(account) %>%
+  mutate(p = n / sum(n)) %>%
+  filter(stage == 1) %>%
+  select(-amount, -offer, -sector, -segment, -director, -manager) %>%
+  arrange(desc(p)) %>%
+  ggplot(aes(reorder(creationDate, p), p, colour=n, alpha = 0.4)) +
+  geom_point() +
+  facet_wrap(~ practice) +
+  theme_minimal() +
+  xlab("Date") +
+  ylab("Proposal win rate")
+```
+
+* **Overall win rates over time**
+```{r overall win rates over time}
+# TODO
+```
+
+* **Do smaller jobs lead to bigger jobs?**
+Investigate a time effect of jobs to jobs within an account
+
+```{r do smaller jobs lead to bigger jobs}
+# find the accounts with the most proposals won
+proposals %>%
+  group_by(account, stage) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  top_n(10)
+
+p1 <- proposals %>% filter(account == "account241") %>%
+  ggplot(aes(creationDate, amount)) +
+  geom_point() +
+  theme_minimal()
+  
+p2 <- proposals %>%
+  filter(stage == 1) %>%
+  group_by(account) %>%
+  select(account, amount, creationDate, practice, offer, source) %>%
+  mutate(n = n()) %>%
+  arrange(desc(n)) %>%
+  filter(n >= 49)
+
+p2 <- p2 %>%
+  ggplot(aes(creationDate, amount, alpha=0.4)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  facet_wrap(~ account)
+
+grid.arrange(p1, p2, ncol = 2)
+rm(p1, p2)
+```
+As can be seen, the assumption that small jobs lead to bigger jobs seems implausible, at least for the 4 accounts with the most proposals won.
+
+* **How does proposal size relates to number of proposals won by account?**
+```{r proposals size over proposals won by account}
+# find the average size of proposals won and relate this to the amount of proposals submitted
+p1 <- proposals %>%
+  filter(stage == 1) %>%
+  group_by(account) %>%
+  summarise(n = n(), avg_size = sum(amount) / n) %>%
+  ggplot(aes(n, avg_size)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_minimal() +
+  xlab("Number of opps won per account") +
+  ylab("Average amount of the opps")
+
+p2 <- proposals %>%
+  filter(stage == 1) %>%
+  group_by(account) %>%
+  summarise(n = n(), size = sum(amount)) %>%
+  ggplot(aes(n, size)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_minimal() +
+  xlab("Number of opps won per account") +
+  ylab("Total amount of the opps per account")
+
+grid.arrange(p1, p2, ncol = 2)
+rm(p1, p2)
+```
+
+It looks like there's no effect on the number of successful proposals per account and the average amount per proposal won. 
 
 
 # Method
 
-1. Get dataset ready for analysis
-2. Try various ML approaches
-3. Select potential model
-4. Conduct analysis
+1. Try various ML approaches (prep data to suit the analysis)
+2. Select potential model
+3. Conduct analysis
 
 # Analysis
 Split data in a train and test set. The train set will contain 90% of the data.
@@ -257,11 +416,10 @@ test_set <- proposals[-train_index, ]
 rm(train_index) # clean up
 ```
 
-
 ## glm
 
-## tree
 
+## trees
 
 
 ## K nearest neighbours
@@ -301,6 +459,13 @@ Are some pairs of directors and managers better than others?
 
 
 ## rmse
+An rmse approach has been tested under the assumption that there are effects for:
+
+* account: some clients are more inclined to award work to us than others
+* practice: some practices are more mature than others
+* director: some directors win more proposals than others
+* manager: some managers win more proposals than others
+* source: the way proposals get to us impacts win rates (e.g. level of competitiveness, relationships)
 
 ## 
 
