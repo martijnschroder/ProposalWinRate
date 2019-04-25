@@ -419,6 +419,99 @@ rm(train_index) # clean up
 
 ## glm
 
+```{r fitting glm model}
+train_set <- train_set_orig
+test_set <- test_set_orig
+
+# Factorise train_set
+train_set$account <- factor(train_set$account)
+train_set$stage <- factor(train_set$stage)
+train_set$practice <- factor(train_set$practice)
+train_set$offer <- factor(train_set$offer)
+train_set$sector <- factor(train_set$sector)
+train_set$segment <- factor(train_set$segment)
+train_set$director <- factor(train_set$director)
+train_set$manager <- factor(train_set$manager)
+train_set$source <- factor(train_set$source)
+
+# Factorise test_set
+test_set$account <- factor(test_set$account)
+test_set$stage <- factor(test_set$stage)
+test_set$practice <- factor(test_set$practice)
+test_set$offer <- factor(test_set$offer)
+test_set$sector <- factor(test_set$sector)
+test_set$segment <- factor(test_set$segment)
+test_set$director <- factor(test_set$director)
+test_set$manager <- factor(test_set$manager)
+test_set$source <- factor(test_set$source)
+
+library(InformationValue) # used for WOE function
+# WOE train_set
+train_set$account <- WOE(X=train_set$account, Y=train_set$stage)
+train_set$practice <- WOE(X=train_set$practice, Y=train_set$stage)
+train_set$offer <- WOE(X=train_set$offer, Y=train_set$stage)
+train_set$sector <- WOE(X=train_set$sector, Y=train_set$stage)
+train_set$segment <- WOE(X=train_set$segment, Y=train_set$stage)
+train_set$director <- WOE(X=train_set$director, Y=train_set$stage)
+train_set$manager <- WOE(X=train_set$manager, Y=train_set$stage)
+train_set$source <- WOE(X=train_set$source, Y=train_set$stage)
+train_set$code <- WOE(X=train_set$code, Y=train_set$stage)
+
+# WOE test_set
+test_set$account <- WOE(X=test_set$account, Y=test_set$stage)
+test_set$practice <- WOE(X=test_set$practice, Y=test_set$stage)
+test_set$offer <- WOE(X=test_set$offer, Y=test_set$stage)
+test_set$sector <- WOE(X=test_set$sector, Y=test_set$stage)
+test_set$segment <- WOE(X=test_set$segment, Y=test_set$stage)
+test_set$director <- WOE(X=test_set$director, Y=test_set$stage)
+test_set$manager <- WOE(X=test_set$manager, Y=test_set$stage)
+test_set$source <- WOE(X=test_set$source, Y=test_set$stage)
+test_set$code <- WOE(X=test_set$code, Y=test_set$stage)
+
+# factorise target variable
+train_set$stage <- factor(train_set$stage)
+# remove date columns
+train_set <- train_set %>% select(-creationDate, closeDate)
+
+# Remove code from the set as this is redundant given account
+train_set <- train_set %>% select(-code)
+test_set <- test_set %>% select(-code)
+
+model <- glm(stage ~., family=binomial(link='logit'), data=train_set)
+summary(model)
+
+# plogis to ensure the predictions are 0 or 1
+predict <- plogis(predict(model, test_set))
+
+# find the optimal cutoff value
+optCutOff <- optimalCutoff(test_set$stage, predict)[1]  # ~0.36
+
+# misclassification error
+misClassError(test_set$stage, predict, threshold = optCutOff) # 0.2163, perhaps a bit high
+
+plotROC(test_set$stage, predict) # the curve doesn't rise very steep. Model is not optimal
+
+# plot the confusion matrix. Prediction of wins is better than prediction of losses
+confusionMatrix(test_set$stage, predict, threshold = optCutOff)
+
+# calculate 0 and 1 results
+realPredict <- ifelse(predict < optCutOff, 0, 1)
+
+# accuracy
+glm_accuracy <- sum(test_set$stage == realPredict) / nrow(test_set)
+
+# setup reporting environment
+accuracy_results <- tibble(method = "glm fitting", accuracy = glm_accuracy)
+accuracy_results
+```
+One challenge with glm was that the trained model didn't generalise for features in the test set that weren't part of the training set. Other models did generalise, which for predcition of proposal win rate is required. To overcome this challenge, we could ensure that all factors in the features are present in both training and test set, however that would defeat the purpose of this exercise.
+
+To overcome this challenge I quantified the information using WOE. The results reported were generated in this manner.
+
+The learning is that the type of data collected may need to be expanded with features that are agnistic to offers, accounts and practices. This could include level of confidence to win the proposal, match between proposal request and skills and quality of the relationship.
+
+Currently this information is not collected and would require a change in business practices and build up of production data.
+
 
 ## trees (rpart)
 
@@ -488,7 +581,14 @@ pred_test <- predict(fit, test_set, type = "class")
 # calculate accuracy
 pred <- tibble(pred_test)
 real <- tibble(test_set$stage)
-sum(pred == real) / nrow(pred)
+trees_accuracy <- sum(pred == real) / nrow(pred)
+
+# report accuracy
+accuracy_results <- bind_rows(accuracy_results,
+                          tibble(method="trees model",  
+                                     accuracy = trees_accuracy))
+
+accuracy_results %>% knitr::kable()
 
 # clean up environment
 rm(pred, real, fit, train_set, test_set, pred_test)
@@ -502,13 +602,56 @@ K nearest neightbour performs well
 # K nearest neighbours
 library(caret)
 
+# prepare datasets
 train_set <- train_set_orig %>%
   na.omit() %>%
-  select(-creationDate, -closeDate, -account, -amount, -director, -manager, -code)
+  select(-creationDate, -closeDate, -code)
 
 test_set <- test_set_orig %>%
   na.omit() %>%
-  select(-creationDate, -closeDate, -account, -amount, -director, -manager, -code)
+  select(-creationDate, -closeDate, -code)
+
+# factorise the data to WOE it
+train_set$account <- factor(train_set$account)
+train_set$practice <- factor(train_set$practice)
+train_set$offer <- factor(train_set$offer)
+train_set$sector <- factor(train_set$sector)
+train_set$segment <- factor(train_set$segment)
+train_set$director <- factor(train_set$director)
+train_set$manager <- factor(train_set$manager)
+train_set$source <- factor(train_set$source)
+
+# WOE test_set
+test_set$account <- factor(test_set$account)
+test_set$practice <- factor(test_set$practice)
+test_set$offer <- factor(test_set$offer)
+test_set$sector <- factor(test_set$sector)
+test_set$segment <- factor(test_set$segment)
+test_set$director <- factor(test_set$director)
+test_set$manager <- factor(test_set$manager)
+test_set$source <- factor(test_set$source)
+
+# WOE the train_set
+# don't WOE stage column as that is the target
+train_set$account <- WOE(X=train_set$account, Y=train_set$stage)
+train_set$practice <- WOE(X=train_set$practice, Y=train_set$stage)
+train_set$offer <- WOE(X=train_set$offer, Y=train_set$stage)
+train_set$sector <- WOE(X=train_set$sector, Y=train_set$stage)
+train_set$segment <- WOE(X=train_set$segment, Y=train_set$stage)
+train_set$director <- WOE(X=train_set$director, Y=train_set$stage)
+train_set$manager <- WOE(X=train_set$manager, Y=train_set$stage)
+train_set$source <- WOE(X=train_set$source, Y=train_set$stage)
+
+# WOE test_set
+# don't WOE stage column as that is the target
+test_set$account <- WOE(X=test_set$account, Y=test_set$stage)
+test_set$practice <- WOE(X=test_set$practice, Y=test_set$stage)
+test_set$offer <- WOE(X=test_set$offer, Y=test_set$stage)
+test_set$sector <- WOE(X=test_set$sector, Y=test_set$stage)
+test_set$segment <- WOE(X=test_set$segment, Y=test_set$stage)
+test_set$director <- WOE(X=test_set$director, Y=test_set$stage)
+test_set$manager <- WOE(X=test_set$manager, Y=test_set$stage)
+test_set$source <- WOE(X=test_set$source, Y=test_set$stage)
 
 train_set$stage <- factor(train_set$stage)
 test_set$stage <- factor(test_set$stage)
@@ -521,8 +664,13 @@ train_knn <- train(stage ~ ., method = "knn",
 # best tune
 train_knn$bestTune
 
-confusionMatrix(predict(train_knn, test_set, type = "raw"),
+knn_accuracy <- confusionMatrix(predict(train_knn, test_set, type = "raw"),
                 test_set$stage)$overall["Accuracy"]
+
+accuracy_results <- bind_rows(accuracy_results,
+                          tibble(method="K nearest neighbours",  
+                                     accuracy = knn_accuracy))
+accuracy_results %>% knitr::kable()
 
 ```
 
@@ -632,8 +780,10 @@ plot(nn)
 This model has the following accuracy:
 ```{r accuracy model 1}
 # calculate model 1 accuracy
-accuracy_results <- tibble(method = "Model 1: 3 hidden", accuracy = nn_accuracy(nn, test_set))
-accuracy_results
+accuracy_results <- bind_rows(accuracy_results,
+                          tibble(method="Neural network 1: 3 hidden",  
+                                     accuracy = nn_accuracy(nn, test_set)))
+accuracy_results %>% knitr::kable()
 ```
 
 Try a few other models:
@@ -670,11 +820,11 @@ accuracy_results <- bind_rows(accuracy_results,
                           tibble(method="2 neurons in hidden layer, propogation",  
                                      accuracy = nn_accuracy(nn, test_set)))
 
-accuracy_results
+accuracy_results %>% knitr::kable()
 ```
 Results are ok, but fairly unpredictable. Neural networks are compelling for their ability to predict and similarities with our own brain physiology. However it is hard to conceptualise how decisions are reached. The interpretability of neural networks is low, perhaps adding to their charm.
 ```{r clean up}
-rm(nn, pred, Predict, prob, train_set, test_set, accuracy_results, nn_accuracy)
+rm(nn, pred, Predict, train_set, test_set, accuracy_results, nn_accuracy)
 ```
 
 
@@ -685,8 +835,4 @@ Making sense of the techniques to apply to the data set has been a journey. Cate
 
 The following models were fitted with resulting accuracies:
 
-| **model** | **accuracy** |
-|glm|1|
-|trees|2|
-|K nearest neighbours|3|
-|neural networks|4|
+accuracy_results %>% knitr::kable()
