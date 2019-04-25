@@ -102,7 +102,8 @@ df_meaning <- c("Name of the account, i.e. the client",
                 "Proposal director; in our practice we assign a proposal director and manager to each proposal",
                 "Proposal manager",
                 "Source of the opportunity, i.e. how did we know of it (e.g. approached by client, tender",
-                "Level of competitiveness of the opportunity (i.e. are we only party bidding or are there more?)"
+                "Level of competitiveness of the opportunity (i.e. are we only party bidding or are there more?)",
+                "Three letter code for the account"
                 )
 df <- tibble(df_col_names, df_meaning)
 names(df) <- c("Column", "Description")
@@ -159,12 +160,12 @@ The following approaches to addressing the NA values are implemented:
 
 * *competitiveness*: drop the column. Although it would be interesting to see the impact of competitiveness on proposals, too many data points are missing to make it useful in the overall analysis. Business practice changes will need to ensure this data is consistently gathered going forward
 ```{r drop competitiveness column}
-# proposals <- proposals %>% select(-competitiveness)
+proposals <- proposals %>% select(-competitiveness)
 ```
 
 
 * *Amount*: Replace missing amounts with overall mean for amount, or if group means can be used (e.g. group means for *offer*). The distribution of amount and boxplots for win and loss data show significant outliers for amount. Potentially predictive analysis will need to take into account potential differences in win rates given amount of proposals
-```{r summary of proposals$amount}
+```{r summary of proposals$amount, warning=FALSE}
 summary(proposals$amount)
 
 temp <- proposals
@@ -184,7 +185,8 @@ rm(temp)
 ```
 
 
-```{r replace missing amounts with overall group means}
+```{r replace missing amounts with overall group mean}
+# replace missing amount values with overall group mean
 amounts <- as.double(proposals$amount[!is.na(proposals$amount)])
 avg_amount <- mean(amounts[amounts > 999]) # calculate overall avg with values greater than 999
 proposals$amount[is.na(proposals$amount)] <- avg_amount # replace NAs with avg amount
@@ -421,6 +423,7 @@ rm(train_index) # clean up
 ## trees (rpart)
 
 1. Apply WOE to data, to create continuous variables from categorical ones
+Compute the Weights Of Evidence (WOE) for each group of a given categorical X and binary response Y. The resulting WOE can be usued in place of the categorical X so as to be used as a continuous variable.
 ```{r rpart tree fitting}
 train_set <- train_set_orig
 test_set <- test_set_orig
@@ -428,6 +431,29 @@ test_set <- test_set_orig
 # WOE the data
 library(rpart)
 library(InformationValue) # used for WOE function
+
+# for WOE to work, the data needs to be factorised
+# WOE train_set
+train_set$account <- factor(train_set$account)
+train_set$stage <- factor(train_set$stage)
+train_set$practice <- factor(train_set$practice)
+train_set$offer <- factor(train_set$offer)
+train_set$sector <- factor(train_set$sector)
+train_set$segment <- factor(train_set$segment)
+train_set$director <- factor(train_set$director)
+train_set$manager <- factor(train_set$manager)
+train_set$source <- factor(train_set$source)
+
+# WOE test_set
+test_set$account <- factor(test_set$account)
+test_set$stage <- factor(test_set$stage)
+test_set$practice <- factor(test_set$practice)
+test_set$offer <- factor(test_set$offer)
+test_set$sector <- factor(test_set$sector)
+test_set$segment <- factor(test_set$segment)
+test_set$director <- factor(test_set$director)
+test_set$manager <- factor(test_set$manager)
+test_set$source <- factor(test_set$source)
 
 # WOE train_set
 train_set$account <- WOE(X=train_set$account, Y=train_set$stage)
@@ -438,6 +464,7 @@ train_set$segment <- WOE(X=train_set$segment, Y=train_set$stage)
 train_set$director <- WOE(X=train_set$director, Y=train_set$stage)
 train_set$manager <- WOE(X=train_set$manager, Y=train_set$stage)
 train_set$source <- WOE(X=train_set$source, Y=train_set$stage)
+train_set$code <- WOE(X=train_set$code, Y=train_set$stage)
 
 # WOE test_set
 test_set$account <- WOE(X=test_set$account, Y=test_set$stage)
@@ -448,8 +475,7 @@ test_set$segment <- WOE(X=test_set$segment, Y=test_set$stage)
 test_set$director <- WOE(X=test_set$director, Y=test_set$stage)
 test_set$manager <- WOE(X=test_set$manager, Y=test_set$stage)
 test_set$source <- WOE(X=test_set$source, Y=test_set$stage)
-
-library(rpart)
+test_set$code <- WOE(X=test_set$code, Y=test_set$stage)
 
 # fit the model with all featuers minus the date ones
 fit <- rpart(stage ~ .,
@@ -464,9 +490,11 @@ pred <- tibble(pred_test)
 real <- tibble(test_set$stage)
 sum(pred == real) / nrow(pred)
 
+# clean up environment
+rm(pred, real, fit, train_set, test_set, pred_test)
 ```
-Best accuracy: 0.7978723
-I bet that's better than humans
+Best accuracy: 0.7801418
+I bet that's better than humans would achieve.
 
 ## K nearest neighbours
 K nearest neightbour performs well
@@ -474,32 +502,191 @@ K nearest neightbour performs well
 # K nearest neighbours
 library(caret)
 
-train_set_knn <- train_set %>%
+train_set <- train_set_orig %>%
   na.omit() %>%
-  select(-creationDate, -closeDate, -account, -amount, -director, -manager)
+  select(-creationDate, -closeDate, -account, -amount, -director, -manager, -code)
 
-test_set_knn <- train_set %>%
+test_set <- test_set_orig %>%
   na.omit() %>%
-  select(-creationDate, -closeDate, -account, -amount, -director, -manager)
+  select(-creationDate, -closeDate, -account, -amount, -director, -manager, -code)
 
+train_set$stage <- factor(train_set$stage)
+test_set$stage <- factor(test_set$stage)
 
 train_knn <- train(stage ~ ., method = "knn", 
-                   data = train_set_knn,
+                   data = train_set,
                    na.action = na.pass,
                    tuneGrid = data.frame(k = seq(9, 71, 2)))
 
 # best tune
 train_knn$bestTune
 
-confusionMatrix(predict(train_knn, test_set_knn, type = "raw"),
-                test_set_knn$stage)$overall["Accuracy"]
+confusionMatrix(predict(train_knn, test_set, type = "raw"),
+                test_set$stage)$overall["Accuracy"]
 
 ```
 
-Best accuracy: 0.7006897 
+Best accuracy: 0.8120567
+Even better than the tree model!
 
 
-## 
+## Neural networks
+Neural networks can be used for classification tasks susch as proposal win rates. Neural network topologies have an input layer (one neuron for each feature, one or more hidden layers and an output layer for the target variable).
+
+The simplified formula describing predictions through neural networks is:
+$$
+Y=\sum(weight*input)+bias
+$$
+Y:      prediction
+weight: strength of connections between neurons
+input:  input signals of features
+bias:   bias introduced
+
+Definition of topologies can be complex and includes mechanisms to process signals, feedback loops to previous layers or neurons within a layer, "reward and punish" functions to train weights and more.
+
+For my approach I'm using an input, hidden and output layer. I'm experimenting with varying numbers of neurons in the hidden layer and test accuracy as an overall performance measure.
+
+```{r prepare train and test set, include=FALSE}
+# Load the required libraries
+library(neuralnet) # neural network engine
+library(InformationValue) # used for WOE function
+
+# All features are coded thorugh WOE
+# For this to work, the features will need to be factorised
+
+train_set <- train_set_orig
+test_set <- test_set_orig
+
+# for WOE to work, the data needs to be factorised
+# WOE train_set
+train_set$account <- factor(train_set$account)
+train_set$practice <- factor(train_set$practice)
+train_set$offer <- factor(train_set$offer)
+train_set$sector <- factor(train_set$sector)
+train_set$segment <- factor(train_set$segment)
+train_set$director <- factor(train_set$director)
+train_set$manager <- factor(train_set$manager)
+train_set$source <- factor(train_set$source)
+train_set$code <- factor(train_set$code)
+
+# WOE test_set
+test_set$account <- factor(test_set$account)
+test_set$practice <- factor(test_set$practice)
+test_set$offer <- factor(test_set$offer)
+test_set$sector <- factor(test_set$sector)
+test_set$segment <- factor(test_set$segment)
+test_set$director <- factor(test_set$director)
+test_set$manager <- factor(test_set$manager)
+test_set$source <- factor(test_set$source)
+test_set$code <- factor(test_set$code)
+
+
+# WOE the train_set
+# don't WOE stage column as that is the target
+train_set$account <- WOE(X=train_set$account, Y=train_set$stage)
+train_set$practice <- WOE(X=train_set$practice, Y=train_set$stage)
+train_set$offer <- WOE(X=train_set$offer, Y=train_set$stage)
+train_set$sector <- WOE(X=train_set$sector, Y=train_set$stage)
+train_set$segment <- WOE(X=train_set$segment, Y=train_set$stage)
+train_set$director <- WOE(X=train_set$director, Y=train_set$stage)
+train_set$manager <- WOE(X=train_set$manager, Y=train_set$stage)
+train_set$source <- WOE(X=train_set$source, Y=train_set$stage)
+train_set$code <- WOE(X=train_set$code, Y=train_set$stage)
+
+# WOE test_set
+# don't WOE stage column as that is the target
+test_set$account <- WOE(X=test_set$account, Y=test_set$stage)
+test_set$practice <- WOE(X=test_set$practice, Y=test_set$stage)
+test_set$offer <- WOE(X=test_set$offer, Y=test_set$stage)
+test_set$sector <- WOE(X=test_set$sector, Y=test_set$stage)
+test_set$segment <- WOE(X=test_set$segment, Y=test_set$stage)
+test_set$director <- WOE(X=test_set$director, Y=test_set$stage)
+test_set$manager <- WOE(X=test_set$manager, Y=test_set$stage)
+test_set$source <- WOE(X=test_set$source, Y=test_set$stage)
+test_set$code <- WOE(X=test_set$code, Y=test_set$stage)
+
+# create a function for reporting accuracy of the fitted models
+nn_accuracy <- function(nn, test_set) {
+  # Get the predictions for the test set
+  Predict=neuralnet::compute(nn,test_set)
+
+  # Converting probabilities into binary classes setting threshold level 0.5
+  prob <- Predict$net.result
+  pred <- ifelse(prob>0.5, 1, 0)
+  
+  # accuracy of predictions
+  sum(pred == test_set$stage) / nrow(pred)
+}
+
+```
+
+* Test the first model with 1 hidden layer of 3 neurons and show the topolgy. The model trained is "stage ~ account + practice + offer + sector + segment + director + manager + source".
+```{r nn model 1}
+nn=neuralnet(stage ~ account + practice + offer + sector + segment + director + manager + source,
+             data=train_set, hidden=3,act.fct = "logistic",
+             linear.output = FALSE)
+
+plot(nn)
+```
+
+This model has the following accuracy:
+```{r accuracy model 1}
+# calculate model 1 accuracy
+accuracy_results <- tibble(method = "Model 1: 3 hidden", accuracy = nn_accuracy(nn, test_set))
+accuracy_results
+```
+
+Try a few other models:
+
+1. 5 neurons in hidden layer
+2. 1 neuron in hidden layer
+3. backward propogation
+
+```{r compute the nn models}
+# 5 neurons in hidden layer
+nn=neuralnet(stage ~ account + practice + offer + sector + segment + director + manager + source,
+             data=train_set, hidden=5, act.fct = "logistic",
+             linear.output = FALSE)
+
+accuracy_results <- bind_rows(accuracy_results,
+                          tibble(method="5 neurons in hidden layer",  
+                                     accuracy = nn_accuracy(nn, test_set)))
+
+# 1 neuron in hidden layer
+nn=neuralnet(stage ~ account + practice + offer + sector + segment + director + manager + source,
+             data=train_set, hidden=1, act.fct = "logistic",
+             linear.output = FALSE)
+
+accuracy_results <- bind_rows(accuracy_results,
+                          tibble(method="1 neuron in hidden layer",  
+                                     accuracy = nn_accuracy(nn, test_set)))
+
+# backward propogation
+nn=neuralnet(stage ~ account + practice + offer + sector + segment + director + manager + source,
+             data=train_set, hidden=2, algorith="rprop+", act.fct = "logistic",
+             linear.output = FALSE)
+
+accuracy_results <- bind_rows(accuracy_results,
+                          tibble(method="2 neurons in hidden layer, propogation",  
+                                     accuracy = nn_accuracy(nn, test_set)))
+
+accuracy_results
+```
+Results are ok, but fairly unpredictable. Neural networks are compelling for their ability to predict and similarities with our own brain physiology. However it is hard to conceptualise how decisions are reached. The interpretability of neural networks is low, perhaps adding to their charm.
+```{r clean up}
+rm(nn, pred, Predict, prob, train_set, test_set, accuracy_results, nn_accuracy)
+```
 
 
 # Conclusions
+Taking a real life challenge such as predicting win rates of proposals for our company was very satisfying. The date quality was low. Limited number of quantified features combined with many missing values.
+
+Making sense of the techniques to apply to the data set has been a journey. Categorisation techniques were suitable for the challenge. Quantification of categorical variables greatly improved my ability to build models. However, this comes at the cost of losing clarity about the categories being recoded and hence the interpretability of the models.
+
+The following models were fitted with resulting accuracies:
+
+| **model** | **accuracy** |
+|glm|1|
+|trees|2|
+|K nearest neighbours|3|
+|neural networks|4|

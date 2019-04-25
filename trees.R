@@ -84,7 +84,7 @@ acc <- sum(diag(conf))/sum(conf)
 
 
 # Ranger
-train_set$name <- factor(train_set$name)
+train_set$account <- factor(train_set$account)
 train_set$stage <- factor(train_set$stage)
 train_set$practice <- factor(train_set$practice)
 train_set$offer <- factor(train_set$offer)
@@ -93,7 +93,7 @@ train_set$segment <- factor(train_set$segment)
 train_set$director <- factor(train_set$director)
 train_set$manager <- factor(train_set$manager)
 
-test_set$name <- factor(test_set$name)
+test_set$account <- factor(test_set$account)
 test_set$stage <- factor(test_set$stage)
 test_set$practice <- factor(test_set$practice)
 test_set$offer <- factor(test_set$offer)
