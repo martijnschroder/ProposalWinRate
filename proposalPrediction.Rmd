@@ -1,7 +1,7 @@
 ---
 title: "Predicting proposal win rates"
 author: "Martijn Schroder"
-date: "1/05/2019"
+date: "27/04/2019"
 output:
   pdf_document:
     toc: yes
@@ -12,7 +12,7 @@ output:
     fig_caption: yes
     toc: yes
 ---
-```{r load requiredlibraries, include=FALSE}
+```{r load requiredlibraries, warning=FALSE, include=FALSE}
 library(tidyverse)
 library(lubridate)
 library(ggthemes)
@@ -59,7 +59,7 @@ The models investigated were:
 * neural networks
 
 ## Results
-The high number of categorical variables made this a challenging tasks in terms of applying machine learning approaches. I experimented with factorised labels of the features, but found that analysis was time consuming, didn't work for a number of model fitting techniques and took significant processing times. In the end I quantified categorical features through WOE to enable easy model fitting.
+The high number of categorical variables made this a challenging tasks in terms of applying machine learning approaches. I experimented with factorised labels of the features, but found that analysis was time consuming, didn't work for a number of model fitting techniques and took significant processing times. In the end I quantified categorical features through [Weights Of Evidence (WOE)](https://www.rdocumentation.org/packages/InformationValue/versions/1.2.3/topics/WOE) to enable easy model fitting.
 
 The most accuracte predictions were achieved with K nearest neighbours, although other models performed comparably well too. All models were hard to interpret in terms of the causes of win rates.
 
@@ -80,7 +80,10 @@ K nearest neighbours was the easiest model to fit and the most accurate. This in
 # Investigate data and clean
 The data set is a raw export from the system used to manage opportunities. A csv export was obtained, which after de identification has the following structure:
 
-```{r names and structure raw dataset, echo=TRUE}
+```{r names and structure raw dataset, echo=TRUE, warning=FALSE}
+# rename "stage" column to "result" for easier comprehension
+names(proposals)[names(proposals) == "stage"] <- "result"
+
 str(proposals, give.attr = FALSE) # show structure of data
 ```
 
@@ -88,7 +91,6 @@ str(proposals, give.attr = FALSE) # show structure of data
 The meaning of the columns is as follows:
 ```{r create and show table explanation of dataset, echo=FALSE}
 # Create a pretty table explaining the data in the dataset
-
 df_col_names <- names(proposals)
 df_meaning <- c("Name of the account, i.e. the client",
                 "Proposal win / loss (1 = win, 0 = loss)",
@@ -102,7 +104,8 @@ df_meaning <- c("Name of the account, i.e. the client",
                 "Proposal director; in our practice we assign a proposal director and manager to each proposal",
                 "Proposal manager",
                 "Source of the opportunity, i.e. how did we know of it (e.g. approached by client, tender",
-                "Level of competitiveness of the opportunity (i.e. are we only party bidding or are there more?)",
+                "Level of competitiveness for the proposal (e.g. how was it sourced?)",
+        
                 "Three letter code for the account"
                 )
 df <- tibble(df_col_names, df_meaning)
@@ -116,7 +119,6 @@ df %>%
 rm(df, df_col_names, df_meaning)
 ```
 
-## Fixing data formats
 The data needs cleaning up. The following changes are made:
 
 * Convert "amount" column from num to double
@@ -157,7 +159,7 @@ rm(n, sumNAbefore)
 
 The following approaches to addressing the NA values are implemented:
 
-* *competitiveness*: drop the column. Although it would be interesting to see the impact of competitiveness on proposals, too many data points are missing to make it useful in the overall analysis. Business practice changes will need to ensure this data is consistently gathered going forward.
+* *competitiveness*: drop the column. Although it would be interesting to see the impact of competitiveness on proposals, too many data points are missing to make it useful in the overall analysis. Business practice changes will need to ensure this data is consistently gathered going forward as this feature seems highly relevant.
 
 ```{r drop competitiveness column}
 proposals <- proposals %>% select(-competitiveness)
@@ -174,14 +176,14 @@ For subsequent steps I decided to leave all data in the set and not treat big pr
 summary(proposals$amount)
 
 temp <- proposals
-temp$stage[temp$stage == 1] <- "win"
-temp$stage[temp$stage == 0] <- "loss"
+temp$result[temp$result == 1] <- "win"
+temp$result[temp$result == 0] <- "loss"
 
 temp %>%
   ggplot(aes(practice, amount)) +
   geom_boxplot() +
   theme_light() +
-  facet_wrap(~stage, ncol=2) +
+  facet_wrap(~result, ncol=2) +
   ggtitle("Win / Loss boxplots over amount") +
   xlab("Practices") +
   ylab("Amount")
@@ -199,14 +201,12 @@ proposals$amount[proposals$amount <= 999] <- avg_amount # replace amounts < 999 
 rm(amounts, avg_amount)
 ```
 
-* *Proposal director / manager*: there are only 3 observations with NA values for proposal director and manager. For simplicity sake we'll delete those.
+* *Proposal director / manager*: there are only `r sum(is.na(proposals$director))` observations with NA values for proposal director and `r sum(is.na(proposals$manager))` for manager. We'll recode those to "unknown".
 
 ```{r remove observations with NA values for director and manager}
 # observations with NA values for director or manager
-proposals[is.na(proposals$director) | is.na(proposals$manager), ]
-
-# delete the offending observations
-proposals <- proposals[!(is.na(proposals$director) | is.na(proposals$manager)), ]
+proposals$director[is.na(proposals$director)] <- "unknown"
+proposals$manager[is.na(proposals$director)] <- "unknown"
 ```
 
 
@@ -228,21 +228,21 @@ proposals[is.na(proposals$segment), ] %>% select(account, practice, sector, segm
 proposals$segment[is.na(proposals$segment)] <- "unknown"
 ```
 
-As can be seen, we can target managers with training to ensure they improve their admin practices.
+As can be seen, there is a case to target specific managers with training to ensure they improve their admin practices.
 
 * *Source*: there are `r sum(is.na(proposals$sector))` NA values. A quick analysis shows that there is significant predictive value in source for win/loss rates. Data quality will need to be addressed to ensure better predictions in future, especially given the fact that the NA group mean win rate is over 70%.
 
-```{r win/loss rates given source, include=FALSE}
+```{r win/loss rates given source, echo=FALSE}
 # proportion of winning proposals given source
 sum_tab <- proposals %>%
-  group_by(source, stage) %>%
+  group_by(source, result) %>%
   summarise(n = n(), value = sum(amount)) %>%
   ungroup() %>%
   group_by(source) %>%
   mutate(p = n / sum(n))
 
 p1 <- sum_tab %>%
-  filter(stage == 1) %>%
+  filter(result == 1) %>%
   ggplot(aes(reorder(source, p), p)) +
   coord_flip() +
   geom_bar(stat = "Identity") +
@@ -250,7 +250,7 @@ p1 <- sum_tab %>%
   ylab("Proportion of proposals won")
 
 p2 <- sum_tab %>%
-  filter(stage == 1) %>%
+  filter(result == 1) %>%
   ggplot(aes(n, p, colour=source)) +
   geom_point() +
   xlab("Number of proposals") +
@@ -259,22 +259,23 @@ p2 <- sum_tab %>%
 grid.arrange(p1, p2, ncol = 2)
 rm(p1, p2, sum_tab)
 ```
+
 As can be seen, the variability of win rates given sources is based on small numbers of observations, with the exeption of source = NA and source2. Win rates ordered by number of observations they're based on shows the following the following:
 
-```{r win rates ordered by number of observations, include=FALSE}
+```{r win rates ordered by number of observations, echo=FALSE}
 # table of win rates given number of observations
 proposals %>%
-  group_by(source, stage) %>%
+  group_by(source, result) %>%
   summarise(n = n(), value = sum(amount)) %>%
   ungroup() %>%
   group_by(source) %>%
   mutate(p_win = n / sum(n)) %>%
-  filter(stage == 1) %>%
+  filter(result == 1 & n > 9) %>%
   arrange(desc(n)) %>%
   select(n, p_win, source)
 
 ```
-Source2 has significantly more observations than any other sources (all n <= 10 not printed). Source can be used as a predictor, however for source NA values in the dataset we could substitute with overall win rate for NAs. Alternatively we create a new source, called "unknown". That is the path we'll follow.
+Source2 has significantly more observations than any other source (all n < 10 not printed). Source can be used as a predictor, however for source NA values in the dataset we could substitute with overall win rate for NAs. Alternatively we create a new source, called "unknown". That is the path we'll follow.
 
 ```{r substitute source NA values with "unknown"}
 proposals$source[is.na(proposals$source)] <- "unknown"
@@ -293,15 +294,15 @@ First some basic exploration of the data to get an understanding of what it tell
 * **Average win rate by account**
 The graph below shows the average win rates for accounts with 10 or more proposal wins. Investigation of the higher win rates for accounts with larger numbers of proposals won would give important clues as to the reasons of their success.
 
-```{r average win rate by account, include=FALSE}
+```{r average win rate by account, echo=FALSE}
 # average win rate by account
 proposals %>%
-  group_by(account, stage) %>%
+  group_by(account, result) %>%
   summarise(n = n()) %>% # total number of wins and losses by account
   ungroup() %>%
   group_by(account) %>%
   mutate(p = n / sum(n)) %>% # proportions win/loss by account
-  filter(n>9, stage == 1) %>% # remove small n and select wins only
+  filter(n>9, result == 1) %>% # remove small n and select wins only
   arrange(desc(p)) %>%
   ggplot(aes(reorder(account, p), p, size=n)) +
   geom_point() + coord_flip() + theme_light() +
@@ -317,15 +318,15 @@ A number of follow up questions are interesting to pursue:
 
 * **Seasonality in win rates**: we experience seasonality in the number of proposals we respond to. The period before EOFY is usually busier. Let's explore number of proposals per year and win rates per year. The graph below shows the trends for the four practices in our business.
 
-```{r explore seasonality, include=FALSE}
+```{r explore seasonality, echo=FALSE}
 # seasonal win rates by account and over practice
 proposals %>%
-  group_by(account, stage) %>%
+  group_by(account, result) %>%
   mutate(n = n()) %>%
   ungroup() %>%
   group_by(account) %>%
   mutate(p = n / sum(n)) %>%
-  filter(stage == 1) %>%
+  filter(result == 1) %>%
   select(-amount, -offer, -sector, -segment, -director, -manager) %>%
   arrange(desc(p)) %>%
   ggplot(aes(reorder(creationDate, p), p, colour=n, alpha = 0.4)) +
@@ -335,18 +336,17 @@ proposals %>%
   xlab("Date") +
   ylab("Proposal win rate")
 ```
-Although more challenging to interpret, it can be seen that practice 2 has submitted less proposals that other practices. This practice is relatively new.
 
-Other interesting features are that the practices over time seem to improve win rates. A particularly interesting insight is the emergence of "proposal win rate bands" at 0.5 and 1.0. This is not investigated further as part of this assignment.
+Interesting features are that the practices over time seem to have improved win rates. A particularly interesting insight is the emergence of two sharp win rate lines at p = 0.5 and p = 1.0. This is not investigated further as part of this assignment, but one hypothesis is that this is related to recording practices that have changed at some point in time.
 
 
 * **Do smaller jobs lead to bigger jobs?**
 Investigate a time effect of jobs to jobs within an account
 
-```{r do smaller jobs lead to bigger jobs, include=FALSE}
+```{r do smaller jobs lead to bigger jobs, echo=FALSE}
 # find the accounts with the most proposals won
 proposals %>%
-  group_by(account, stage) %>%
+  group_by(account, result) %>%
   summarise(n = n()) %>%
   arrange(desc(n)) %>%
   top_n(10)
@@ -357,7 +357,7 @@ p1 <- proposals %>% filter(account == "account241") %>%
   theme_minimal()
   
 p2 <- proposals %>%
-  filter(stage == 1) %>%
+  filter(result == 1) %>%
   group_by(account) %>%
   select(account, amount, creationDate, practice, offer, source) %>%
   mutate(n = n()) %>%
@@ -374,13 +374,13 @@ p2 <- p2 %>%
 grid.arrange(p1, p2, ncol = 2)
 rm(p1, p2)
 ```
-As can be seen, the assumption that small jobs lead to bigger jobs seems implausible, at least for the 4 accounts selected in this plot with the most proposals won.
+As can be seen, the assumption that small jobs lead to bigger jobs seems implausible, at least for the 4 accounts selected in this plot with the most proposals won. Further analysis across all accounts could outline grouping for accounts in terms of their trending on value of proposals won.
 
 * **How does proposal size relates to number of proposals won by account?**
-```{r proposals size over proposals won by account, warning=FALSE, include=FALSE}
+```{r proposals size over proposals won by account, echo=FALSE, warning=FALSE}
 # find the average size of proposals won and relate this to the amount of proposals submitted
 p1 <- proposals %>%
-  filter(stage == 1) %>%
+  filter(result == 1) %>%
   group_by(account) %>%
   summarise(n = n(), avg_size = sum(amount) / n) %>%
   ggplot(aes(n, avg_size)) +
@@ -391,7 +391,7 @@ p1 <- proposals %>%
   ylab("Average amount of the opps")
 
 p2 <- proposals %>%
-  filter(stage == 1) %>%
+  filter(result == 1) %>%
   group_by(account) %>%
   summarise(n = n(), size = sum(amount)) %>%
   ggplot(aes(n, size)) +
@@ -429,10 +429,17 @@ rm(train_index) # clean up
 ## glm
 General linear regression is a powerful technique that fits binomial target variables. In order to apply regression (as opposed to MANOVA), I opted to quantify categorical features using Weights of Evidence (WOE). 
 
-The generic model to fit is as follows:
+The generic glm model is as follows:
 $$
-Y = \sum{}
+\hat{Y} = \beta_0 + \beta_1X_1 + \beta_2X_2 + ... \beta_kX_k
 $$
+with $\beta s$ the coefficients and $X s$ the prediciton variables.
+
+To fit the glm model we
+
+* Copy a fresh tran and test set
+* factorise and apply WOE
+* fit the model
 
 ```{r glm prepare train and test sets, include=FALSE}
 train_set <- train_set_orig
@@ -440,7 +447,7 @@ test_set <- test_set_orig
 
 # Factorise train_set
 train_set$account <- factor(train_set$account)
-train_set$stage <- factor(train_set$stage)
+train_set$result <- factor(train_set$result)
 train_set$practice <- factor(train_set$practice)
 train_set$offer <- factor(train_set$offer)
 train_set$sector <- factor(train_set$sector)
@@ -451,7 +458,7 @@ train_set$source <- factor(train_set$source)
 
 # Factorise test_set
 test_set$account <- factor(test_set$account)
-test_set$stage <- factor(test_set$stage)
+test_set$result <- factor(test_set$result)
 test_set$practice <- factor(test_set$practice)
 test_set$offer <- factor(test_set$offer)
 test_set$sector <- factor(test_set$sector)
@@ -462,72 +469,98 @@ test_set$source <- factor(test_set$source)
 
 library(InformationValue) # used for WOE function
 # WOE train_set
-train_set$account <- WOE(X=train_set$account, Y=train_set$stage)
-train_set$practice <- WOE(X=train_set$practice, Y=train_set$stage)
-train_set$offer <- WOE(X=train_set$offer, Y=train_set$stage)
-train_set$sector <- WOE(X=train_set$sector, Y=train_set$stage)
-train_set$segment <- WOE(X=train_set$segment, Y=train_set$stage)
-train_set$director <- WOE(X=train_set$director, Y=train_set$stage)
-train_set$manager <- WOE(X=train_set$manager, Y=train_set$stage)
-train_set$source <- WOE(X=train_set$source, Y=train_set$stage)
-train_set$code <- WOE(X=train_set$code, Y=train_set$stage)
+train_set$account <- WOE(X=train_set$account, Y=train_set$result)
+train_set$practice <- WOE(X=train_set$practice, Y=train_set$result)
+train_set$offer <- WOE(X=train_set$offer, Y=train_set$result)
+train_set$sector <- WOE(X=train_set$sector, Y=train_set$result)
+train_set$segment <- WOE(X=train_set$segment, Y=train_set$result)
+train_set$director <- WOE(X=train_set$director, Y=train_set$result)
+train_set$manager <- WOE(X=train_set$manager, Y=train_set$result)
+train_set$source <- WOE(X=train_set$source, Y=train_set$result)
+train_set$code <- WOE(X=train_set$code, Y=train_set$result)
 
 # WOE test_set
-test_set$account <- WOE(X=test_set$account, Y=test_set$stage)
-test_set$practice <- WOE(X=test_set$practice, Y=test_set$stage)
-test_set$offer <- WOE(X=test_set$offer, Y=test_set$stage)
-test_set$sector <- WOE(X=test_set$sector, Y=test_set$stage)
-test_set$segment <- WOE(X=test_set$segment, Y=test_set$stage)
-test_set$director <- WOE(X=test_set$director, Y=test_set$stage)
-test_set$manager <- WOE(X=test_set$manager, Y=test_set$stage)
-test_set$source <- WOE(X=test_set$source, Y=test_set$stage)
-test_set$code <- WOE(X=test_set$code, Y=test_set$stage)
+test_set$account <- WOE(X=test_set$account, Y=test_set$result)
+test_set$practice <- WOE(X=test_set$practice, Y=test_set$result)
+test_set$offer <- WOE(X=test_set$offer, Y=test_set$result)
+test_set$sector <- WOE(X=test_set$sector, Y=test_set$result)
+test_set$segment <- WOE(X=test_set$segment, Y=test_set$result)
+test_set$director <- WOE(X=test_set$director, Y=test_set$result)
+test_set$manager <- WOE(X=test_set$manager, Y=test_set$result)
+test_set$source <- WOE(X=test_set$source, Y=test_set$result)
+test_set$code <- WOE(X=test_set$code, Y=test_set$result)
 
 # factorise target variable
-train_set$stage <- factor(train_set$stage)
+train_set$result <- factor(train_set$result)
 # remove date columns
 train_set <- train_set %>% select(-creationDate, -closeDate, -code)
 test_set <- test_set %>% select(-creationDate, -closeDate, -code)
 
 ```
 
-The following model was fitted (creationDate, closeDate and code were removed):
-> model <- glm(stage ~., family=binomial(link='logit'), data=train_set)
+The following model was fitted (creationDate, closeDate and code were removed for reasons of implausible causation and in the case of "code" a redundant feature as it was originally obtained from the account feature):
+> model <- glm(result ~., family=binomial(link='logit'), data=train_set)
 
+```{r fit the glm model, echo=FALSE, warning=FALSE}
+# fit the model
+model <- glm(result ~., family=binomial(link='logit'), data=train_set)
+```
 
-```{r fitting glm model}
+The summary statistics of the model show that all features are statistically significant, although "practice" is weak. Interestingly enough, "amount" is significant, which I find harder to interpret. It will be good to plot win rates over amounts of proposals and see if we do better or worse given proposal value.
 
-model <- glm(stage ~., family=binomial(link='logit'), data=train_set)
+```{r summary glm model, echo=FALSE}
 summary(model)
+```
 
+We obtain predictions for the test dataset and determine to optimal cutoff for the test set and subsequently show the confusion matrix and overall accuracy of the model.
+
+```{r predict with fitted glm model, echo=FALSE, warning=FALSE}
 # plogis to ensure the predictions are 0 or 1
 predict <- plogis(predict(model, test_set))
 
 # find the optimal cutoff value
-optCutOff <- optimalCutoff(test_set$stage, predict)[1]  # ~0.36
+optCutOff <- optimalCutoff(test_set$result, predict)[1]
 
 # misclassification error
-misClassError(test_set$stage, predict, threshold = optCutOff) # 0.2163, perhaps a bit high
+# misClassError(test_set$result, predict, threshold = optCutOff)
 
-plotROC(test_set$stage, predict) # the curve doesn't rise very steep. Model is not optimal
+# plotROC(test_set$result, predict) # the curve doesn't rise very steep. Model is not optimal
 
+```
+
+The confusion matrix shows reasonable results for the wins, but poor results for the losses. Overall, and despite the accuracy reported later, I find this result undesirable.
+
+```{r glm confusion matrix}
 # plot the confusion matrix. Prediction of wins is better than prediction of losses
-confusionMatrix(test_set$stage, predict, threshold = optCutOff)
+confusionMatrix(test_set$result, predict, threshold = optCutOff)
+```
 
+Determine binomial prediction values (e.g. '0's and '1's) and report overall accuracy.
+
+```{r glm real predictions and accuracy}
 # calculate 0 and 1 results
 realPredict <- ifelse(predict < optCutOff, 0, 1)
 
 # accuracy
-glm_accuracy <- sum(test_set$stage == realPredict) / nrow(test_set)
+glm_accuracy <- sum(test_set$result == realPredict) / nrow(test_set)
 
 # setup reporting environment
 accuracy_results <- tibble(method = "glm fitting", accuracy = glm_accuracy)
 accuracy_results
+
+rm(model, glm_accuracy, optCutOff, predict, realPredict)
 ```
 
-One challenge with glm was that models trained with unaltered datasets (i.e. not using WOE) didn't generalise well, unless I assured that all feature labels (i.e. accountxyz) were in both train and test dataset. This did come at a cost of reduced number of observations and reduced ability to preduct future proposals for new accounts / offers etc.
+The accuracy is reasonable, but given the confusion matrix the specificity is poor.
 
-Instead I used WOE to ensure I 1) used all observations and 2) were able to generalise. The cost of this decision was interpretability of the results and potentially changing how variance in the model is distributed. Thirdly it is much harder to see how causality works in proposal win rate prediction. And I'm a big fan of understand causality.
+One challenge with glm was that models trained with unaltered datasets (i.e. not using WOE and instead using lables) didn't generalise to observations with different labels (unless I assured that all feature labels (i.e. accountxyz) were in both train and test dataset). Doing this would come at a significant cost of reduced number of observations and reduced ability to preduct future proposals for new accounts / offers etc.
+
+Instead I used WOE to ensure I
+
+1. used all observations and
+2. were able to generalise.
+
+The cost of this decision was interpretability of the results and potentially changing how variance in the model is distributed. Thirdly it is much harder to see how causality works in proposal win rate prediction. And I'm a big fan of understand causality.
 
 My learning is that the type of data collected may need to be expanded with features that are agnistic to offers, accounts and practices. This could include level of confidence to win the proposal, match between proposal request and skills and quality of the relationship.
 
@@ -535,9 +568,7 @@ Currently this information is not collected and would require a change in busine
 
 
 ## trees (rpart)
-Trees are an intuitive way to think about proposal win rates. I was expecting to see super managers and directors, offers that clearly outperformed and other significant insights. This did not happen.
-
-
+Trees are an intuitive way to think about proposal win rates. I was expecting to see super managers and directors (who determine win rates), offers that clearly outperformed and other such expecations. This did not happen. I felt that a few myths we like to hold true were slayed.
 
 ```{r trees prepare training and test datasets, include=FALSE}
 train_set <- train_set_orig
@@ -550,7 +581,7 @@ library(InformationValue) # used for WOE function
 # for WOE to work, the data needs to be factorised
 # WOE train_set
 train_set$account <- factor(train_set$account)
-train_set$stage <- factor(train_set$stage)
+train_set$result <- factor(train_set$result)
 train_set$practice <- factor(train_set$practice)
 train_set$offer <- factor(train_set$offer)
 train_set$sector <- factor(train_set$sector)
@@ -561,7 +592,7 @@ train_set$source <- factor(train_set$source)
 
 # WOE test_set
 test_set$account <- factor(test_set$account)
-test_set$stage <- factor(test_set$stage)
+test_set$result <- factor(test_set$result)
 test_set$practice <- factor(test_set$practice)
 test_set$offer <- factor(test_set$offer)
 test_set$sector <- factor(test_set$sector)
@@ -571,36 +602,35 @@ test_set$manager <- factor(test_set$manager)
 test_set$source <- factor(test_set$source)
 
 # WOE train_set
-train_set$account <- WOE(X=train_set$account, Y=train_set$stage)
-train_set$practice <- WOE(X=train_set$practice, Y=train_set$stage)
-train_set$offer <- WOE(X=train_set$offer, Y=train_set$stage)
-train_set$sector <- WOE(X=train_set$sector, Y=train_set$stage)
-train_set$segment <- WOE(X=train_set$segment, Y=train_set$stage)
-train_set$director <- WOE(X=train_set$director, Y=train_set$stage)
-train_set$manager <- WOE(X=train_set$manager, Y=train_set$stage)
-train_set$source <- WOE(X=train_set$source, Y=train_set$stage)
-train_set$code <- WOE(X=train_set$code, Y=train_set$stage)
+train_set$account <- WOE(X=train_set$account, Y=train_set$result)
+train_set$practice <- WOE(X=train_set$practice, Y=train_set$result)
+train_set$offer <- WOE(X=train_set$offer, Y=train_set$result)
+train_set$sector <- WOE(X=train_set$sector, Y=train_set$result)
+train_set$segment <- WOE(X=train_set$segment, Y=train_set$result)
+train_set$director <- WOE(X=train_set$director, Y=train_set$result)
+train_set$manager <- WOE(X=train_set$manager, Y=train_set$result)
+train_set$source <- WOE(X=train_set$source, Y=train_set$result)
+train_set$code <- WOE(X=train_set$code, Y=train_set$result)
 
 # WOE test_set
-test_set$account <- WOE(X=test_set$account, Y=test_set$stage)
-test_set$practice <- WOE(X=test_set$practice, Y=test_set$stage)
-test_set$offer <- WOE(X=test_set$offer, Y=test_set$stage)
-test_set$sector <- WOE(X=test_set$sector, Y=test_set$stage)
-test_set$segment <- WOE(X=test_set$segment, Y=test_set$stage)
-test_set$director <- WOE(X=test_set$director, Y=test_set$stage)
-test_set$manager <- WOE(X=test_set$manager, Y=test_set$stage)
-test_set$source <- WOE(X=test_set$source, Y=test_set$stage)
-test_set$code <- WOE(X=test_set$code, Y=test_set$stage)
+test_set$account <- WOE(X=test_set$account, Y=test_set$result)
+test_set$practice <- WOE(X=test_set$practice, Y=test_set$result)
+test_set$offer <- WOE(X=test_set$offer, Y=test_set$result)
+test_set$sector <- WOE(X=test_set$sector, Y=test_set$result)
+test_set$segment <- WOE(X=test_set$segment, Y=test_set$result)
+test_set$director <- WOE(X=test_set$director, Y=test_set$result)
+test_set$manager <- WOE(X=test_set$manager, Y=test_set$result)
+test_set$source <- WOE(X=test_set$source, Y=test_set$result)
+test_set$code <- WOE(X=test_set$code, Y=test_set$result)
 
 ```
 
-1. Apply WOE to data, to create continuous variables from categorical ones
-Compute the Weights Of Evidence (WOE) for each group of a given categorical X and binary response Y. The resulting WOE can be usued in place of the categorical X so as to be used as a continuous variable.
+The following code was run to fit the model:
 
 ```{r rpart tree fitting}
 
 # fit the model with all featuers minus the date ones
-fit <- rpart(stage ~ .,
+fit <- rpart(result ~ .,
              method = "class",
              data = train_set)
 
@@ -609,23 +639,81 @@ pred_test <- predict(fit, test_set, type = "class")
 
 # calculate accuracy
 pred <- tibble(pred_test)
-real <- tibble(test_set$stage)
+real <- tibble(test_set$result)
 trees_accuracy <- sum(pred == real) / nrow(pred)
 
+```
+
+A visual representation of the fitted model was challenging to interpret. The first significant decision point was amount, which makes little sense given that proposals request work of a particular size and the proposal value tries to match that. Future changes in business practices could be to add a feature expressing our confidence in matching price with understood expectations of the client.
+
+I've fitted a second model without the "amount" feature. Results are reported below.
+
+
+```{r fancy plot of tree model, echo=FALSE}
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+
+fancyRpartPlot(fit, sub = "Tree model with amount")
+
+```
+
+
+The accuracy of the tree model was slighty higher than the glm method.
+
+```{r tree accuracy, echo=FALSE}
 # report accuracy
 accuracy_results <- bind_rows(accuracy_results,
-                          tibble(method="trees model",  
+                          tibble(method="trees model with amount",  
                                      accuracy = trees_accuracy))
 
 accuracy_results %>% knitr::kable()
 
-# clean up environment
-rm(pred, real, fit, train_set, test_set, pred_test)
 ```
-Best accuracy: 0.7801418
-I bet that's better than humans would achieve.
+
+Model fit without "amount".
+
+```{r tree fit without amount, include=FALSE}
+train_set <- train_set %>% select(-amount, -creationDate, - closeDate)
+test_set <- test_set %>% select(-amount, -creationDate, - closeDate)
+
+fit <- rpart(result ~ .,
+             method = "class",
+             data = train_set)
+
+# get predictions for test set
+pred_test <- predict(fit, test_set, type = "class")
+
+# calculate accuracy
+pred <- tibble(pred_test)
+real <- tibble(test_set$result)
+trees_accuracy <- sum(pred == real) / nrow(pred)
+```
+
+Visual of the model. This model is easier to interpret. The manager seems to have a large impact on the proposal win rate. This is an expected result and one deserving more analysis. The key future questions to explore are which managers are better at winning proposals and what do they do different?
+
+```{r plot of tree model without amount, echo=FALSE}
+fancyRpartPlot(fit, sub = "tree model without amount")
+```
+
+With accuracy:
+```{r tree model accuracy without amount}
+# report accuracy
+accuracy_results <- bind_rows(accuracy_results,
+                          tibble(method="trees model without amount",  
+                                     accuracy = trees_accuracy))
+
+accuracy_results %>% knitr::kable()
+```
+
+
+```{r clean up tree environment}
+# clean up environment
+rm(pred, real, fit, train_set, test_set, pred_test, trees_accuracy)
+```
 
 ## K nearest neighbours
+K nearest neighbours aims to categorise observations based on distance of observations from group means of neighbouring abservations.
 
 ```{r knn prepare training and test datasets, include=FALSE}
 # prepare datasets
@@ -658,58 +746,63 @@ test_set$manager <- factor(test_set$manager)
 test_set$source <- factor(test_set$source)
 
 # WOE the train_set
-# don't WOE stage column as that is the target
-train_set$account <- WOE(X=train_set$account, Y=train_set$stage)
-train_set$practice <- WOE(X=train_set$practice, Y=train_set$stage)
-train_set$offer <- WOE(X=train_set$offer, Y=train_set$stage)
-train_set$sector <- WOE(X=train_set$sector, Y=train_set$stage)
-train_set$segment <- WOE(X=train_set$segment, Y=train_set$stage)
-train_set$director <- WOE(X=train_set$director, Y=train_set$stage)
-train_set$manager <- WOE(X=train_set$manager, Y=train_set$stage)
-train_set$source <- WOE(X=train_set$source, Y=train_set$stage)
+# don't WOE result column as that is the target
+train_set$account <- WOE(X=train_set$account, Y=train_set$result)
+train_set$practice <- WOE(X=train_set$practice, Y=train_set$result)
+train_set$offer <- WOE(X=train_set$offer, Y=train_set$result)
+train_set$sector <- WOE(X=train_set$sector, Y=train_set$result)
+train_set$segment <- WOE(X=train_set$segment, Y=train_set$result)
+train_set$director <- WOE(X=train_set$director, Y=train_set$result)
+train_set$manager <- WOE(X=train_set$manager, Y=train_set$result)
+train_set$source <- WOE(X=train_set$source, Y=train_set$result)
 
 # WOE test_set
-# don't WOE stage column as that is the target
-test_set$account <- WOE(X=test_set$account, Y=test_set$stage)
-test_set$practice <- WOE(X=test_set$practice, Y=test_set$stage)
-test_set$offer <- WOE(X=test_set$offer, Y=test_set$stage)
-test_set$sector <- WOE(X=test_set$sector, Y=test_set$stage)
-test_set$segment <- WOE(X=test_set$segment, Y=test_set$stage)
-test_set$director <- WOE(X=test_set$director, Y=test_set$stage)
-test_set$manager <- WOE(X=test_set$manager, Y=test_set$stage)
-test_set$source <- WOE(X=test_set$source, Y=test_set$stage)
+# don't WOE result column as that is the target
+test_set$account <- WOE(X=test_set$account, Y=test_set$result)
+test_set$practice <- WOE(X=test_set$practice, Y=test_set$result)
+test_set$offer <- WOE(X=test_set$offer, Y=test_set$result)
+test_set$sector <- WOE(X=test_set$sector, Y=test_set$result)
+test_set$segment <- WOE(X=test_set$segment, Y=test_set$result)
+test_set$director <- WOE(X=test_set$director, Y=test_set$result)
+test_set$manager <- WOE(X=test_set$manager, Y=test_set$result)
+test_set$source <- WOE(X=test_set$source, Y=test_set$result)
 
 ```
 
-K nearest neightbour performs well
-```{r K nearest neighbours, cache=TRUE}
+Model fitting.
+```{r K nearest neighbours, message=FALSE, warning=FALSE, cache=TRUE}
 # K nearest neighbours
 library(caret)
 
-train_set$stage <- factor(train_set$stage)
-test_set$stage <- factor(test_set$stage)
+train_set$result <- factor(train_set$result)
+test_set$result <- factor(test_set$result)
 
-train_knn <- train(stage ~ ., method = "knn", 
+train_knn <- train(result ~ ., method = "knn", 
                    data = train_set,
                    na.action = na.pass,
                    tuneGrid = data.frame(k = seq(9, 71, 2)))
 
 # best tune
-train_knn$bestTune
+#train_knn$bestTune
 
 knn_accuracy <- confusionMatrix(predict(train_knn, test_set, type = "raw"),
-                test_set$stage)$overall["Accuracy"]
+                test_set$result)$overall["Accuracy"]
+
+```
+
+The following confusion matrix and accuracy was achieved.
+```{r knn accuracy}
+
+as.table(confusionMatrix(predict(train_knn, test_set, type = "raw"),
+                test_set$result))
 
 accuracy_results <- bind_rows(accuracy_results,
                           tibble(method="K nearest neighbours",  
                                      accuracy = knn_accuracy))
 accuracy_results %>% knitr::kable()
-
 ```
 
-Best accuracy: 0.8120567
-Even better than the tree model!
-
+Results were slightly worse than other models fitted. The confusion matrix shows again that it is harder to predict losses than wins.
 
 ## Neural networks
 Neural networks can be used for classification tasks susch as proposal win rates. Neural network topologies have an input layer (one neuron for each feature, one or more hidden layers and an output layer for the target variable).
@@ -748,28 +841,28 @@ test_set$code <- factor(test_set$code)
 
 
 # WOE the train_set
-# don't WOE stage column as that is the target
-train_set$account <- WOE(X=train_set$account, Y=train_set$stage)
-train_set$practice <- WOE(X=train_set$practice, Y=train_set$stage)
-train_set$offer <- WOE(X=train_set$offer, Y=train_set$stage)
-train_set$sector <- WOE(X=train_set$sector, Y=train_set$stage)
-train_set$segment <- WOE(X=train_set$segment, Y=train_set$stage)
-train_set$director <- WOE(X=train_set$director, Y=train_set$stage)
-train_set$manager <- WOE(X=train_set$manager, Y=train_set$stage)
-train_set$source <- WOE(X=train_set$source, Y=train_set$stage)
-train_set$code <- WOE(X=train_set$code, Y=train_set$stage)
+# don't WOE result column as that is the target
+train_set$account <- WOE(X=train_set$account, Y=train_set$result)
+train_set$practice <- WOE(X=train_set$practice, Y=train_set$result)
+train_set$offer <- WOE(X=train_set$offer, Y=train_set$result)
+train_set$sector <- WOE(X=train_set$sector, Y=train_set$result)
+train_set$segment <- WOE(X=train_set$segment, Y=train_set$result)
+train_set$director <- WOE(X=train_set$director, Y=train_set$result)
+train_set$manager <- WOE(X=train_set$manager, Y=train_set$result)
+train_set$source <- WOE(X=train_set$source, Y=train_set$result)
+train_set$code <- WOE(X=train_set$code, Y=train_set$result)
 
 # WOE test_set
-# don't WOE stage column as that is the target
-test_set$account <- WOE(X=test_set$account, Y=test_set$stage)
-test_set$practice <- WOE(X=test_set$practice, Y=test_set$stage)
-test_set$offer <- WOE(X=test_set$offer, Y=test_set$stage)
-test_set$sector <- WOE(X=test_set$sector, Y=test_set$stage)
-test_set$segment <- WOE(X=test_set$segment, Y=test_set$stage)
-test_set$director <- WOE(X=test_set$director, Y=test_set$stage)
-test_set$manager <- WOE(X=test_set$manager, Y=test_set$stage)
-test_set$source <- WOE(X=test_set$source, Y=test_set$stage)
-test_set$code <- WOE(X=test_set$code, Y=test_set$stage)
+# don't WOE result column as that is the target
+test_set$account <- WOE(X=test_set$account, Y=test_set$result)
+test_set$practice <- WOE(X=test_set$practice, Y=test_set$result)
+test_set$offer <- WOE(X=test_set$offer, Y=test_set$result)
+test_set$sector <- WOE(X=test_set$sector, Y=test_set$result)
+test_set$segment <- WOE(X=test_set$segment, Y=test_set$result)
+test_set$director <- WOE(X=test_set$director, Y=test_set$result)
+test_set$manager <- WOE(X=test_set$manager, Y=test_set$result)
+test_set$source <- WOE(X=test_set$source, Y=test_set$result)
+test_set$code <- WOE(X=test_set$code, Y=test_set$result)
 ```
 
 
@@ -786,7 +879,7 @@ Definition of topologies can be complex and includes mechanisms to process signa
 
 For my approach I'm using an input, hidden and output layer. I'm experimenting with varying numbers of neurons in the hidden layer and test accuracy as an overall performance measure.
 
-```{r neural networks prepare train and test set, include=FALSE}
+```{r neural networks prepare train and test set}
 # Load the required libraries
 library(neuralnet) # neural network engine
 
@@ -801,15 +894,15 @@ nn_accuracy <- function(nn, test_set) {
   pred <- ifelse(prob>0.5, 1, 0)
   
   # accuracy of predictions
-  sum(pred == test_set$stage) / nrow(pred)
+  sum(pred == test_set$result) / nrow(pred)
 }
 
 ```
 
-* Test the first model with 1 hidden layer of 3 neurons and show the topolgy. The model trained is "stage ~ account + practice + offer + sector + segment + director + manager + source".
+* Test the first model with 1 hidden layer of 3 neurons and show the topolgy. The model trained is "result ~ account + practice + offer + sector + segment + director + manager + source".
 
 ```{r nn model 1}
-nn=neuralnet(stage ~ account + practice + offer + sector + segment + director + manager + source,
+nn=neuralnet(result ~ account + practice + offer + sector + segment + director + manager + source,
              data=train_set, hidden=3,act.fct = "logistic",
              linear.output = FALSE)
 
@@ -834,7 +927,7 @@ Try a few other models:
 
 ```{r compute the nn models}
 # 5 neurons in hidden layer
-nn=neuralnet(stage ~ account + practice + offer + sector + segment + director + manager + source,
+nn=neuralnet(result ~ account + practice + offer + sector + segment + director + manager + source,
              data=train_set, hidden=5, act.fct = "logistic",
              linear.output = FALSE)
 
@@ -843,7 +936,7 @@ accuracy_results <- bind_rows(accuracy_results,
                                      accuracy = nn_accuracy(nn, test_set)))
 
 # 1 neuron in hidden layer
-nn=neuralnet(stage ~ account + practice + offer + sector + segment + director + manager + source,
+nn=neuralnet(result ~ account + practice + offer + sector + segment + director + manager + source,
              data=train_set, hidden=1, act.fct = "logistic",
              linear.output = FALSE)
 
@@ -852,7 +945,7 @@ accuracy_results <- bind_rows(accuracy_results,
                                      accuracy = nn_accuracy(nn, test_set)))
 
 # backward propogation
-nn=neuralnet(stage ~ account + practice + offer + sector + segment + director + manager + source,
+nn=neuralnet(result ~ account + practice + offer + sector + segment + director + manager + source,
              data=train_set, hidden=2, algorith="rprop+", act.fct = "logistic",
              linear.output = FALSE)
 

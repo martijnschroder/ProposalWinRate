@@ -1,10 +1,10 @@
 proposals %>%
-  group_by(account, stage) %>%
+  group_by(account, result) %>%
   mutate(n = n()) %>%
   ungroup() %>%
   group_by(account) %>%
   mutate(p = n / sum(n)) %>%
-  filter(stage == 1) %>%
+  filter(result == 1) %>%
   select(-amount, -offer, -sector, -segment, -director, -manager) %>%
   arrange(desc(p)) %>%
   ggplot(aes(reorder(creationDate, p), p, colour=n, alpha = 0.4)) +
@@ -15,12 +15,12 @@ proposals %>%
   ylab("Proposal win rate")
 
 proposals %>%
-  group_by(account, stage) %>%
+  group_by(account, result) %>%
   mutate(n = n()) %>%
   ungroup() %>%
   group_by(account) %>%
   mutate(p = n / sum(n)) %>%
-  filter(stage == 1) %>%
+  filter(result == 1) %>%
   select(-amount, -offer, -sector, -segment, -director, -manager) %>%
   arrange(desc(p)) %>%
   ggplot(aes(reorder(creationDate, p), p, colour=n, alpha = 0.4)) +
