@@ -3,16 +3,16 @@ title: "Predicting proposal win rates"
 author: "Martijn Schroder"
 date: "27/04/2019"
 output:
-  pdf_document:
-    toc: yes
   html_document:
     df_print: paged
+    toc: yes
+  pdf_document:
     toc: yes
   html_notebook:
     fig_caption: yes
     toc: yes
 ---
-```{r load requiredlibraries, warning=FALSE, include=FALSE}
+```{r load required libraries}
 library(tidyverse)
 library(lubridate)
 library(ggthemes)
@@ -22,8 +22,8 @@ library(knitr)
 library(kableExtra)
 ```
 
-
-```{r load dataset, include=FALSE}
+Load the data:
+```{r load dataset}
 # Read the dataset
 proposals <- read_csv("data/data.csv", col_names = TRUE)
 ```
@@ -161,7 +161,7 @@ The following approaches to addressing the NA values are implemented:
 
 * *competitiveness*: drop the column. Although it would be interesting to see the impact of competitiveness on proposals, too many data points are missing to make it useful in the overall analysis. Business practice changes will need to ensure this data is consistently gathered going forward as this feature seems highly relevant.
 
-```{r drop competitiveness column}
+```{r drop competitiveness column, eval=FALSE, include=FALSE}
 proposals <- proposals %>% select(-competitiveness)
 ```
 
@@ -206,7 +206,7 @@ rm(amounts, avg_amount)
 ```{r remove observations with NA values for director and manager}
 # observations with NA values for director or manager
 proposals$director[is.na(proposals$director)] <- "unknown"
-proposals$manager[is.na(proposals$director)] <- "unknown"
+proposals$manager[is.na(proposals$manager)] <- "unknown"
 ```
 
 
@@ -800,6 +800,9 @@ accuracy_results <- bind_rows(accuracy_results,
                           tibble(method="K nearest neighbours",  
                                      accuracy = knn_accuracy))
 accuracy_results %>% knitr::kable()
+
+# clean up
+rm(knn_accuracy, train_knn)
 ```
 
 Results were slightly worse than other models fitted. The confusion matrix shows again that it is harder to predict losses than wins.
@@ -879,7 +882,7 @@ Definition of topologies can be complex and includes mechanisms to process signa
 
 For my approach I'm using an input, hidden and output layer. I'm experimenting with varying numbers of neurons in the hidden layer and test accuracy as an overall performance measure.
 
-```{r neural networks prepare train and test set}
+```{r neural networks prepare train and test set, message=FALSE, warning=FALSE}
 # Load the required libraries
 library(neuralnet) # neural network engine
 
@@ -902,8 +905,9 @@ nn_accuracy <- function(nn, test_set) {
 * Test the first model with 1 hidden layer of 3 neurons and show the topolgy. The model trained is "result ~ account + practice + offer + sector + segment + director + manager + source".
 
 ```{r nn model 1}
-nn=neuralnet(result ~ account + practice + offer + sector + segment + director + manager + source,
+nn=neuralnet(formula = result ~ account + practice + offer + sector + segment + director + manager + source,
              data=train_set, hidden=3,act.fct = "logistic",
+             err.fct = "sse",
              linear.output = FALSE)
 
 plot(nn)
@@ -959,7 +963,7 @@ accuracy_results %>% knitr::kable()
 Results are ok, but fairly unpredictable. Neural networks are compelling for their ability to predict and similarities with our own brain physiology. However it is hard to conceptualise how decisions are reached. The interpretability of neural networks is low, perhaps adding to their charm.
 
 ```{r clean up}
-rm(nn, pred, Predict, train_set, test_set, accuracy_results, nn_accuracy)
+rm(nn, train_set, test_set, accuracy_results, nn_accuracy)
 ```
 
 
